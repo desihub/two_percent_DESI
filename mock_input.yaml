@@ -1,0 +1,72 @@
+# mock target configuration file
+
+dust_dir: /project/projectdirs/desi/software/edison/dust/v0_1/maps
+
+decals_brick_info: /project/projectdirs/desi/target/catalogs/brick-info-dr3.v0.0.1.fits
+
+subset:
+    ra_dec_cut: True
+    min_ra: 0.0
+    max_ra: 40.0
+    min_dec: -20.0
+    max_dec:  5.0
+sources:
+#    BGS: {
+#        target_name: BGS,
+#        mock_dir_name: /project/projectdirs/desi/mocks/bgs/MXXL/desi_footprint/v0.0.3/BGS_new_footprint.hdf5,
+#        magcut: 20.3,
+#        format: durham_mxxl_hdf5,
+#    }
+    ELG: {
+        target_name: ELG,
+        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5,
+        format: gaussianfield,
+        density: 2400,
+    }
+#    LRG: {
+#        target_name: LRG,
+#        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/LRG.fits,
+#        format: gaussianfield,
+#    }
+#    QSO: {
+#        target_name: QSO,
+#        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/QSO.fits,
+#        format: gaussianfield,
+#        density: 170,
+#    }
+#    LYA: {
+#        target_name: QSO,
+#        mock_dir_name: /project/projectdirs/desi/mocks/lya_forest/v0.0.2,
+#        format: lya,
+#        density: 50,
+#    }
+#    MWS_WD: {
+#        target_name: MWS_WD,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/wd/v0.0.2/mock_wd.fits,
+#        format: wd,
+#   }
+#    MWS_NEARBY: {
+#        target_name: MWS_NEARBY,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/100pc/v0.0.3/mock_100pc.fits,
+#        format: 100pc,
+#    }
+#    MWS_MAIN: {
+#       target_name: MWS_MAIN,
+#       mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/v0.0.3/bricks,
+#       format: galaxia,
+#       density: 200.0,
+#    }
+#    SKY: {
+#        target_name: SKY,
+#        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.1/2048/random.fits,
+#        format: gaussianfield,
+#        density: 1400.0,
+#    }
+#    BADQSO: {
+#       target_name: QSO,
+#       truth_name: STD_FSTAR,
+#       root_mock_dir: /project/projectdirs/desi/mocks/mws/small_galaxia/alpha/v0.0.2/bricks,
+#       format: galaxia,
+#       global_density: True,
+#       selection: ndens
+#    }
