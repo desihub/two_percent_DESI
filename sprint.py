@@ -32,8 +32,7 @@ print('tiles fulllength:', tile_all)
 print('tiles ra,dec cut:', tile_in)
 
 #generate targets
-import multiprocessing
-nproc = multiprocessing.cpu_count()
+nproc = 24
 
 print('using nprocs {}'.format(nproc))
 
