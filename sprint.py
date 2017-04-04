@@ -66,7 +66,7 @@ for pair in grid_list:
         realtargets_file = '/project/projectdirs/desi/target/catalogs/targets-dr3.1-0.8.1.fits'
         
         bricksize = 0.25
-        outbricksize = 0.50
+        outbricksize = 0.25
     
         from astropy.io import fits
         print('Loading real targets from {}'.format(realtargets_file))
