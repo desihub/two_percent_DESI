@@ -1,18 +1,11 @@
 import numpy as np
 from surveysim.surveysim import surveySim
-
-
 import os
 import argparse
 import yaml
 
-# Run surveysim for a month
-run_surveysim = False
-if run_surveysim:
-    surveySim((2019,9,1), (2019,10,1))
 
 # Read the TILEID that got observed
-
 a = np.loadtxt('twopct.ecsv', skiprows=19, usecols=(4,5,6))
 tileid= np.int_(a[:,0])
 ra = a[:,1]
@@ -73,11 +66,11 @@ for pair in grid_list:
         print('Loading real targets from {}'.format(realtargets_file))
         realtargets = fits.getdata(realtargets_file)
     
-    
-        # Construct Targets and Truth files
-        targets_truth(params, output_dir, realtargets=realtargets, seed=42,
-                      verbose=True, nproc=nproc, bricksize=bricksize,
-                      outbricksize=outbricksize)
+        if not os.path.exists(output_dir):    
+            # Construct Targets and Truth files
+            targets_truth(params, output_dir, realtargets=realtargets, seed=42,
+                          verbose=True, nproc=nproc, bricksize=bricksize,
+                          outbricksize=outbricksize)
 
         log.info('All done!')
 

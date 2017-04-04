@@ -1,9 +1,10 @@
-!/bin/bash -l
+#!/bin/bash -l
 
 #SBATCH  -p regular
 #SBATCH -N 1
-#SBATCH -t 1:00:00
+#SBATCH -t 12:00:00
 #SBATCH -L SCRATCH,project
+#SBATCH -J targets
 
 cd $SLURM_SUBMIT_DIR
 echo "# Running "
