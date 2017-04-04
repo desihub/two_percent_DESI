@@ -19,10 +19,6 @@ ra = a['RA']
 dec = a['DEC']
 
 side_grid = 3.0
-ra_min_list = np.linspace(0.0,360.0-3.0,360.0/3.0, dtype=int)
-dec_min_list = np.linspace(-90.0,90-3.0,180.0/3.0, dtype=int)
-print(ra_min_list)
-print(dec_min_list)
 n_tiles = len(a)
 grid_list = []
 for i in range(n_tiles):
