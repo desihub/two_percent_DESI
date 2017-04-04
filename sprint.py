@@ -1,5 +1,4 @@
 import numpy as np
-from astropy.table import Table
 from surveysim.surveysim import surveySim
 
 
@@ -13,10 +12,11 @@ if run_surveysim:
     surveySim((2019,9,1), (2019,10,1))
 
 # Read the TILEID that got observed
-a = Table.read("obslist_all.fits")
-tileid= a['TILEID']
-ra = a['RA']
-dec = a['DEC']
+
+a = np.loadtxt('twopct.ecsv', skiprows=19, usecols=(4,5,6))
+tileid= np.int_(a[:,0])
+ra = a[:,1]
+dec = a[:,2]
 
 side_grid = 3.0
 n_tiles = len(a)
@@ -29,6 +29,8 @@ for i in range(n_tiles):
 
 print('n_tiles', n_tiles)
 print('n_grid', len(grid_list))
+
+generate_spec = True
 
 grid_i = 0
 for pair in grid_list:
@@ -53,7 +55,6 @@ for pair in grid_list:
 
     
     #generate targets
-    generate_spec = True
     if generate_spec:
         nproc = 24
 
@@ -80,3 +81,5 @@ for pair in grid_list:
 
         log.info('All done!')
 
+print('n_tiles', n_tiles)
+print('n_grid', len(grid_list))
