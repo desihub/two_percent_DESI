@@ -4,6 +4,11 @@ import os
 import argparse
 import yaml
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--first', '-f', help='first grid', type=int, default=None)
+parser.add_argument('--last', '-l', help='last grid', type=int, default=None)
+args = parser.parse_args()
+
 
 # Read the TILEID that got observed
 a = np.loadtxt('twopct.ecsv', skiprows=19, usecols=(4,5,6))
@@ -20,14 +25,16 @@ for i in range(n_tiles):
     if (ra_grid, dec_grid) not in grid_list:
         grid_list.append((ra_grid,dec_grid))
 
+n_grid = len(grid_list)
 print('n_tiles', n_tiles)
-print('n_grid', len(grid_list))
+print('n_grid', n_grid)
 
 generate_spec = True
 
-grid_i = 0
-for pair in grid_list:
-    grid_i = grid_i + 1 
+first_grid= args.first
+last_grid = min(args.last, n_grid)
+for grid_i in range(first_grid, last_grid):
+    pair = grid_list[grid_i]
     min_ra = pair[0]
     min_dec = pair[1]
     print(min_ra, min_dec)
