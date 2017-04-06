@@ -11,7 +11,7 @@ tileid= np.int_(a[:,0])
 ra = a[:,1]
 dec = a[:,2]
 
-side_grid = 3.0
+side_grid = 2.0
 n_tiles = len(a)
 grid_list = []
 for i in range(n_tiles):
