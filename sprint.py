@@ -17,14 +17,26 @@ ra = a[:,1]
 dec = a[:,2]
 
 side_grid = 3.0
+side_field = 1.5
 n_tiles = len(a)
 grid_list = []
-for i in range(n_tiles):
-    ra_grid = int(ra[i] - ra[i]%side_grid)
-    dec_grid = int(dec[i] - dec[i]%side_grid)
-    if (ra_grid, dec_grid) not in grid_list:
-        grid_list.append((ra_grid,dec_grid))
 
+for i in range(n_tiles):
+    for k in [-1.0,0.0,1.0]:
+        for l in [-1.0, 0.0, 1.0]:
+#            print(k,l,i)
+            ra_corner = (ra[i] + k * side_field)%360.0
+            dec_corner = (dec[i] + l * side_field)
+            if dec_corner<-90.0:
+                dec_corner = -90.0
+            if dec_corner>90.0:
+                dec_corner = -90.0
+
+            ra_grid = int(ra_corner - ra_corner%side_grid)
+            dec_grid = int(dec_corner - dec_corner%side_grid)
+            if (ra_grid, dec_grid) not in grid_list:
+                grid_list.append((ra_grid,dec_grid))
+                
 n_grid = len(grid_list)
 print('n_tiles', n_tiles)
 print('n_grid', n_grid)
