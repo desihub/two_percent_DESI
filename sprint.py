@@ -16,7 +16,7 @@ tileid= np.int_(a[:,0])
 ra = a[:,1]
 dec = a[:,2]
 
-side_grid = 2.0
+side_grid = 3.0
 n_tiles = len(a)
 grid_list = []
 for i in range(n_tiles):
@@ -56,28 +56,24 @@ for grid_i in range(first_grid, last_grid):
     
     #generate targets
     if generate_spec:
-        nproc = 24
-
-        from desitarget.mock.build import targets_truth
-        from desispec.log import get_logger, DEBUG
-
-        log = get_logger(DEBUG)
-
-        # Optionally read the "real" target catalog.
-        realtargets_file = '/project/projectdirs/desi/target/catalogs/targets-dr3.1-0.8.1.fits'
-        
-        bricksize = 0.25
-        outbricksize = 0.25
-    
-        from astropy.io import fits
-        print('Loading real targets from {}'.format(realtargets_file))
-        realtargets = fits.getdata(realtargets_file)
-    
         if not os.path.exists(output_dir):    
+            nproc = 24
+            from desitarget.mock.build import targets_truth
+            from desispec.log import get_logger, DEBUG
+
+            log = get_logger(DEBUG)
+            
+            # Optionally read the "real" target catalog.
+            realtargets_file = '/project/projectdirs/desi/target/catalogs/targets-dr3.1-0.8.1.fits'
+        
+            from astropy.io import fits
+            print('Loading real targets from {}'.format(realtargets_file))
+            realtargets = fits.getdata(realtargets_file)
+            
+
             # Construct Targets and Truth files
             targets_truth(params, output_dir, realtargets=realtargets, seed=42,
-                          verbose=True, nproc=nproc, bricksize=bricksize,
-                          outbricksize=outbricksize)
+                          verbose=True, nproc=nproc)
 
         log.info('All done!')
 
