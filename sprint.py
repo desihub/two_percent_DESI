@@ -32,7 +32,7 @@ for i in range(n_tiles):
             if dec_corner>90.0:
                 dec_corner = -90.0
 
-            ra_grid = int(ra_corner - ra_corner%side_grid)
+            ra_grid = int(ra_corner - ra_corner%side_grid)%359.99
             dec_grid = int(dec_corner - dec_corner%side_grid)
             if (ra_grid, dec_grid) not in grid_list:
                 grid_list.append((ra_grid,dec_grid))
@@ -54,7 +54,9 @@ for grid_i in range(first_grid, last_grid):
     with open(config_file, 'r') as pfile:
         params = yaml.load(pfile)
     params['subset']['min_ra'] = min_ra 
-    params['subset']['max_ra'] = min_ra + side_grid
+    params['subset']['max_ra'] = (min_ra + side_grid)
+    if  params['subset']['max_ra'] == 360.0:
+        params['subset']['max_ra'] = 359.99
     params['subset']['min_dec'] = min_dec 
     params['subset']['max_dec'] = min_dec + side_grid 
     output_dir = "./output_{}".format(grid_i)  
