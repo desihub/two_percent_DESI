@@ -25,7 +25,7 @@ for i in range(n_tiles):
     for k in [-1.0,0.0,1.0]:
         for l in [-1.0, 0.0, 1.0]:
 #            print(k,l,i)
-            ra_corner = (ra[i] + k * side_field)%360.0
+            ra_corner = (ra[i] + k * side_field)%359.99
             dec_corner = (dec[i] + l * side_field)
             if dec_corner<-90.0:
                 dec_corner = -90.0
