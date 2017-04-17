@@ -22,3 +22,24 @@ References:
 - newexp-desi code is [here](https://github.com/desihub/desisim/blob/master/bin/newexp-desi)
 - quickgen documented in code header [here](https://github.com/desihub/desisim/blob/master/py/desisim/scripts/quickgen.py)
 - Pipeline processing steps are documented [here](https://github.com/desihub/desispec/blob/master/doc/pipeline.rst)
+
+## Details on Individual Steps
+
+For each step:
+1. List shortcuts taken for the 2% sprint that should be revisited before the 20% milestone.
+2. Mention any missing functionality that should be implemented before the 20% milestone.
+3. Describe bottlenecks that need to be sped up before running 20% jobs.
+
+### Simulate Observing Conditions & Schedule Tiles
+
+1. Recipe to simulate observations was not reproducible.
+2. Scheduling algorithm and its implementation (afternoon plan + next-field-sel) need more vetting & docs.
+3. No performance issues.
+
+### Tiles to Spectra
+
+### Spectra + Observing Conditions to Frames
+
+### Pipeline: Frames to Bricks
+
+### Pipeline: Redshift Fitting
