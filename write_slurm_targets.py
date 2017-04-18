@@ -41,7 +41,7 @@ fileout.write('#SBATCH -C haswell\n')
  
 
 for i in range(n_nodes):
-    fileout.write('srun -N 1 -n 1 -c 32  sprint.py --first {} --last {} &\n'.format(i*chunks_per_node, (i+1)*chunks_per_node))
+    fileout.write('srun -N 1 -n 1 -c 32  python sprint.py --first {} --last {} &\n'.format(i*chunks_per_node, (i+1)*chunks_per_node))
 
 fileout.write('wait\n')
 fileout.close()

@@ -89,7 +89,7 @@ for grid_i in range(first_grid, last_grid):
             targets_truth(params, output_dir, realtargets=realtargets, seed=42,
                           verbose=True, nproc=nproc)
 
-        log.info('All done!')
+        
 
 print('n_tiles', n_tiles)
 print('n_grid', len(grid_list))
