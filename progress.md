@@ -5,8 +5,8 @@
 | Script              | Inputs              | Ouptuts        |  NJobs | Time/job | Status     |
 |---------------------|---------------------|----------------|--------|----------|------------|
 | surveysim           | footprint           | twopct.ecsv    |      1 |     4min | done       |
-| select_mock_targets | mock catalogs       | target catalog | 1/sqdeg |         |            |
-| newexp-desi         | twopct.ecsv         | simspecs       |  1/exp |          |            |
+| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |         |            |
+| newexp-desi         | twopct.ecsv, target catalog, mock spectra | simspecs, fibermpas |  1/exp (?) |          |            |
 | quickgen            | fibermaps, simspecs | frames         |  1/exp |          |            |
 | pipeline-fiberflat  | flat frames         | fiberflat      | 1/flat |          |            |
 | pipeline-sky        | frames, fiberflats  | sky models     |  1/exp |          |            |
