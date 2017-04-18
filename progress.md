@@ -7,7 +7,7 @@
 | Script              | Inputs              | Ouptuts        |  NJobs | Time/job | Status     |
 |---------------------|---------------------|----------------|--------|----------|------------|
 | surveysim           | footprint           | twopct.ecsv    |      1 |     4min | done       |
-| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |         | refactoring |
+| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |    15min     | refactoring |
 | fiberassign         | target catalog      | fiber assignments | 1 | <10min | ready |
 | newexp-desi         | twopct.ecsv, target catalog, mock spectra, fiberassign | simspecs, fibermaps |  1/night (?) |  |  refactoring |
 | quickgen            | fibermaps, simspecs | frames         |  1/exp |          | waiting newexp; maybe refactor |
