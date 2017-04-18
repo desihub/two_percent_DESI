@@ -45,11 +45,9 @@ For each step:
 3. No performance issues.
 
 ### Tiles to Spectra
-1. The reuse of `select_mock_targets` in a non-optimal way to generate all the data. (Details. This [python script](https://github.com/desihub/two_percent_DESI/blob/master/sprint.py) is the driver to generate targets+truth+spectra for chuncks of a few square degrees. It takes as an input the scheduled set of tiles.)
-This [python script](https://github.com/desihub/two_percent_DESI/blob/master/write_slurm_targets.py) generates the 
-slurm script file. The outputs are in separate directories and files that need to be glued.
-2. Target generation needs to be MPI parallel. The directory structure should have less directories and files. 
-3. The main bottle neck is a MPI parallel version that is able to generate the 20%. 
+1. The reuse of `select_mock_targets` in a non-optimal way to generate all the data. (Details. This [python script](https://github.com/desihub/two_percent_DESI/blob/master/sprint.py) is the driver to generate targets+truth+spectra for chuncks of a few square degrees. It takes as an input the scheduled set of tiles. This [python script](https://github.com/desihub/two_percent_DESI/blob/master/write_slurm_targets.py) generates the  slurm script file. The outputs are in separate directories and files that need to be glued.)
+2. Target generation needs to be MPI parallel. The final output directory structure should have less directories and files. 
+3. A MPI parallel version.
 
 ### Targets, Spectra, Observing Conditions, Fiber Assignments to simspec
 
