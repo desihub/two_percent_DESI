@@ -18,42 +18,42 @@ sources:
     }
     ELG: {
         target_name: ELG,
-        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5,
+        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/ELG.fits,
         format: gaussianfield,
         density: 2155,
         contam: {
             STAR: 240,
         }
     }
-    FAINTSTAR: {
-        target_name: FAINTSTAR,
-        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/0.0.4_superfaint/bricks,
-        format: galaxia,
-    }
+#    FAINTSTAR: {
+#        target_name: FAINTSTAR,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/0.0.4_superfaint/bricks,
+#        format: galaxia,
+#    }
     LRG: {
         target_name: LRG,
-        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5,
+        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/LRG.fits,
         format: gaussianfield,
         density: 350,
     }
-    MWS_MAIN: {
-        target_name: MWS_MAIN,
-        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/v0.0.4/bricks,
-        format: galaxia,
-    }
-    MWS_NEARBY: {
-        target_name: MWS_NEARBY,
-        mock_dir_name: /project/projectdirs/desi/mocks/mws/100pc/v0.0.3/mock_100pc.fits,
-        format: 100pc,
-    }
-    MWS_WD: {
-        target_name: MWS_WD,
-        mock_dir_name: /project/projectdirs/desi/mocks/mws/wd/v0.0.2/mock_wd.fits,
-        format: wd,
-    }
+#    MWS_MAIN: {
+#        target_name: MWS_MAIN,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/v0.0.4/bricks,
+#        format: galaxia,
+#    }
+#    MWS_NEARBY: {
+#        target_name: MWS_NEARBY,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/100pc/v0.0.3/mock_100pc.fits,
+#        format: 100pc,
+#    }
+#    MWS_WD: {
+#        target_name: MWS_WD,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/wd/v0.0.2/mock_wd.fits,
+#        format: wd,
+#    }
     QSO: {
         target_name: QSO,
-        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5,
+        mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/QSO.fits,
         format: gaussianfield,
         density: 120,
         contam: {
