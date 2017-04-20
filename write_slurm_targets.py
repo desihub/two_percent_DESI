@@ -3,7 +3,7 @@ def write_header(fileout):
     fileout.write('#!/bin/bash -l\n')
     fileout.write('#SBATCH -p regular\n')
     fileout.write('#SBATCH -N 1\n')
-    fileout.write('#SBATCH -t 1:00:00\n')
+    fileout.write('#SBATCH -t 1:30:00\n')
     fileout.write('#SBATCH -L SCRATCH,project\n')
 
 a = np.loadtxt('twopct.ecsv', skiprows=19, usecols=(4,5,6))
@@ -32,7 +32,7 @@ for i in range(n_tiles):
                 grid_list.append((ra_grid,dec_grid))
 
 n_chunks = len(grid_list)
-chunks_per_node = 4
+chunks_per_node = 5
 
 n_nodes = n_chunks//chunks_per_node + 1
 print(n_chunks, chunks_per_node, n_nodes)
