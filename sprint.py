@@ -16,7 +16,7 @@ tileid= np.int_(a[:,0])
 ra = a[:,1]
 dec = a[:,2]
 
-side_grid = 1.5
+side_grid = 3.0
 side_field = 1.5
 n_tiles = len(a)
 grid_list = []
@@ -71,6 +71,7 @@ for grid_i in range(first_grid, last_grid):
     #generate targets
     if generate_spec:
         if not os.path.exists(output_dir):    
+            os.mkdir(output_dir)
             nproc = 24
             from desitarget.mock.build import targets_truth
             from desispec.log import get_logger, DEBUG
