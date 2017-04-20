@@ -11,7 +11,7 @@ tileid= np.int_(a[:,0])
 ra = a[:,1]
 dec = a[:,2]
 
-side_grid = 3.0
+side_grid = 2.0
 side_field = 1.5
 n_tiles = len(a)
 grid_list = []
@@ -32,7 +32,7 @@ for i in range(n_tiles):
                 grid_list.append((ra_grid,dec_grid))
 
 n_chunks = len(grid_list)
-chunks_per_node = 5
+chunks_per_node = 9
 
 n_nodes = n_chunks//chunks_per_node + 1
 print(n_chunks, chunks_per_node, n_nodes)
