@@ -25,12 +25,12 @@ sources:
             STAR: 240,
         }
     }
-    FAINTSTAR: {
-        target_name: FAINTSTAR,
-        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/0.0.4_superfaint,
-        format: galaxia,
-        magcut: 23.0,
-    }
+#    FAINTSTAR: {
+#        target_name: FAINTSTAR,
+#        mock_dir_name: /project/projectdirs/desi/mocks/mws/galaxia/alpha/0.0.4_superfaint,
+#        format: galaxia,
+#        magcut: 23.0,
+#    }
     LRG: {
         target_name: LRG,
         mock_dir_name: /project/projectdirs/desi/mocks/GaussianRandomField/v0.0.5/LRG.fits,
