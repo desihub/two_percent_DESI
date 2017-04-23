@@ -25,7 +25,7 @@ if os.path.isfile(out_spectra):
 alltruth = []
 alltargets = []
 
-dirs = glob.glob("output_1")
+dirs = glob.glob("output_*")
 for d in dirs:
     iter_truth = dtio.iter_files(d, 'truth')
     iter_target = dtio.iter_files(d, 'targets')
