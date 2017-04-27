@@ -15,7 +15,10 @@ def merge_table_data(infiles, ext=1):
     data = [fitsio.read(x, ext) for x in infiles]
     return np.hstack(data)
 
-def merge_files(comm, globname, ext, outfile):
+def merge_files(comm, globname, ext, outfile, outextname=None):
+    '''
+    Doesn't work for large merges; pickle barfs if objects are too big
+    '''
     size = comm.Get_size()
     rank = comm.Get_rank()
     if rank == 0:
@@ -32,15 +35,24 @@ def merge_files(comm, globname, ext, outfile):
         print('reading', time.asctime())
 
     data = merge_table_data(infiles[rank::size], ext=ext)
+    # print('Rank {} got {} rows'.format(rank, len(data)))
 
-    if rank == 0:
-        print('gathering', time.asctime())
+    def tmpfile(outfile, rank):
+        return '{}-{}'.format(outfile, rank)
 
-    data_tables = comm.gather(data, root=0)
-        
-    #- Recombine and stack at rank 0
+    #- Merge via temporary files on disk (!) because the data tables are
+    #- too big to be sent via pickle (comm.gather, comm.send) but the dtype
+    #- is also too complex to be sent via the non-pickle methods (comm.Send)
+    #- Ugly hack, but pragmatically this works well
+    fitsio.write(tmpfile(outfile, rank), data, clobber=True)
+    comm.barrier()
+
     if rank == 0:
         print('stacking', time.asctime())
+        data_tables = list()
+        for i in range(size):
+            data_tables.append( fitsio.read(tmpfile(outfile, i), 1) )
+            os.remove(tmpfile(outfile, i))
         data = np.hstack(data_tables)
 
     if rank == 0:
@@ -48,8 +60,10 @@ def merge_files(comm, globname, ext, outfile):
         sys.stdout.flush()
         header = fitsio.read_header(infiles[0], ext)
         tmpout = outfile + '.tmp'
-        fitsio.write(tmpout, data, header=header)
+        fitsio.write(tmpout, data, header=header, extname=outextname)
         os.rename(tmpout, outfile)
+    
+    comm.barrier()
 
 #-------------------------------------------------------------------------
 comm = MPI.COMM_WORLD
@@ -59,18 +73,22 @@ rank = comm.Get_rank()
 import optparse
 
 parser = optparse.OptionParser(usage = "%prog [options]")
-parser.add_option("-i", "--indir", type=str,  help="input directory")
+parser.add_option("-t", "--targetdir", type=str,  help="input targets directory")
+parser.add_option("-s", "--skydir", type=str,  help="input sky directory")
 parser.add_option("-o", "--outdir", type=str,  help="output directory")
 # parser.add_option("-v", "--verbose", action="store_true", help="some flag")
 
 opts, args = parser.parse_args()
 
 #- Edison defaults for debugging convenience
-if opts.indir is None:
-    opts.indir = '/global/project/projectdirs/desi/users/forero/datachallenge2017/two_percent_DESI'
+if opts.skydir is None:
+    opts.skydir = '/global/project/projectdirs/desi/users/forero/datachallenge2017/two_percent_DESI'
+
+if opts.targetdir is None:
+    opts.targetdir = '/scratch2/scratchdirs/sjbailey/desi/dc17a/targets'
 
 if opts.outdir is None:
-    opts.outdir = '/scratch2/scratchdirs/sjbailey/desi/dc17a/targets'
+    opts.outdir = '/scratch2/scratchdirs/sjbailey/desi/dc17a/targets/testmerge'
 
 #- Cori
 # if opts.indir is None:
@@ -78,46 +96,68 @@ if opts.outdir is None:
 # if opts.outdir is None:
 #     opts.outdir = '/global/cscratch1/sd/sjbailey/desi/dc17a/targets/'
 
+out_sky = opts.outdir+'/sky.fits'
+out_stddark = opts.outdir+'/standards-dark.fits'
+out_stdbright = opts.outdir+'/standards-bright.fits'
+out_targets = opts.outdir+'/targets.fits'
+out_truth = opts.outdir+'/truth.fits'
+out_mtl = opts.outdir+'/mtl.fits'
+
 #- Check which outputs still need to be done (in case we had to rerun)
+#- All ranks need to know this, but just ping the disk with rank 0
 if rank == 0:
     todo = dict()
-    todo['sky'] = not os.path.exists(opts.outdir+'/sky.fits')
-    todo['std_dark'] = not os.path.exists(opts.outdir+'/standards-dark.fits')
-    todo['std_bright'] = not os.path.exists(opts.outdir+'/standards-bright.fits')
-    todo['targets'] = not os.path.exists(opts.outdir+'/targets.fits')
-    todo['truth'] = not os.path.exists(opts.outdir+'/truth.fits')
+    todo['sky'] = not os.path.exists(out_sky)
+    todo['targets'] = not os.path.exists(out_targets)
+    todo['truth'] = not os.path.exists(out_truth)
 else:
     todo = None
 
 todo = comm.bcast(todo, root=0)
 
 if todo['sky']:
-    merge_files(comm, opts.indir+'/output_*/sky.fits', 1, opts.outdir+'/sky.fits')
-
-if todo['std_dark']:
-    merge_files(comm, opts.indir+'/output_*/standards-dark.fits', 1, opts.outdir+'/standards-dark.fits')
-
-if todo['std_bright']:
-    merge_files(comm, opts.indir+'/output_*/standards-bright.fits', 1, opts.outdir+'/standards-bright.fits')
+    merge_files(comm, opts.skydir+'/output_*/sky.fits', 1, out_sky, 'SKY')
 
 if todo['targets']:
-    merge_files(comm, opts.indir+'/output_*/???/targets-*.fits', 1, opts.outdir+'/targets.fits')
+    merge_files(comm, opts.targetdir+'/???/targets-*.fits', 1, out_targets, 'TARGETS')
 
 if todo['truth']:
-    merge_files(comm, opts.indir+'/output_*/???/truth-*.fits', 'TRUTH', opts.outdir+'/truth.fits')
+    merge_files(comm, opts.targetdir+'/???/truth-*.fits', 'TRUTH', out_truth, 'TRUTH')
+
+#- Extracts standards from targets file we just wrote
+#- These are fast enough that it is ok that the other ranks are idle
+#- MTL is done last; writing it is the slowest
+if rank == 0:
+    if not os.path.exists(out_stddark) or \
+       not os.path.exists(out_stdbright) or \
+       not os.path.exists(out_mtl):
+        import desitarget
+        targets = fitsio.read(out_targets, 'TARGETS')
+
+    if not os.path.exists(out_stddark):
+        print('Generating '+out_stddark)
+        isSTD = (targets['DESI_TARGET'] & desitarget.desi_mask['STD_FSTAR']) != 0
+        tmpout = out_stddark + '.tmp'
+        fitsio.write(tmpout, targets[isSTD], extname='STD')
+        os.rename(tmpout, out_stddark)
+
+    if not os.path.exists(out_stdbright):
+        print('Generating '+out_stdbright)
+        isSTD = (targets['DESI_TARGET'] & desitarget.desi_mask['STD_BRIGHT']) != 0
+        tmpout = out_stdbright + '.tmp'
+        fitsio.write(tmpout, targets[isSTD], extname='STD')
+        os.rename(tmpout, out_stdbright)
+
+    if not os.path.exists(out_mtl):
+        print('Generating '+out_mtl)
+        import desitarget.mtl
+        mtl = desitarget.mtl.make_mtl(targets)
+        tmpout = out_mtl+'.tmp'
+        mtl.meta['EXTNAME'] = 'MTL'
+        mtl.write(tmpout, format='fits')
+        os.rename(tmpout, out_mtl)
 
 MPI.Finalize()
-
-#- MTL (maybe not bother in a parallel job while other cores sit idle?)
-# if rank == 0:
-#     out_mtl = os.path.join(outdir,'mtl.fits')
-#     if not os.path.exists(out_mtl):
-#         from desitarget import mtl
-#         targets = fitsio.read(outdir+'/targets.fits')
-#         mtl = mtl.make_mtl(targets)
-#         tmpout = out_mtl+'.tmp'
-#         fitsio.write(tmpout, mtl)
-#         os.rename(tmpout, out_mtl)
 
 
 
