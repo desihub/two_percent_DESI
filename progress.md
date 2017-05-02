@@ -49,6 +49,10 @@ For each step:
 2. Target generation needs to be MPI parallel. The final output directory structure should have less directories and files. See the checklist [here](https://github.com/desihub/desitarget/issues/169#issuecomment-296156292).
 3. A MPI parallel version.
 
+Review and fix target densities, especially ELGs and standard stars (both too low).  See Johns [QA notebook](https://github.com/desihub/desitarget/blob/sprintqa/doc/nb/twopercent-sprint-qa.ipynb).
+
+Fix duplicate TARGETIDs
+
 ### Targets, Spectra, Observing Conditions, Fiber Assignments to simspec
 
 1. Refactor in progress in desisim newexp branch.
