@@ -4,25 +4,25 @@
 
 (specsim version, not pixsim version)
 
-| Script              | Inputs              | Ouptuts        |  NJobs | Time/job | Status     |
+| Script              | Inputs              | Ouptuts        |  NJobs | Time | Status     |
 |---------------------|---------------------|----------------|--------|----------|------------|
 | surveysim           | footprint           | twopct.ecsv    |      1 |     4min | done       |
-| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |    15min     | refactoring |
-| fiberassign         | target catalog      | fiber assignments | 1 | <10min | ready |
-| newexp-desi         | twopct.ecsv, target catalog, mock spectra, fiberassign | simspecs, fibermaps |  1/night (?) |  |  refactoring |
-| quickgen            | fibermaps, simspecs | frames         |  1/exp |          | waiting newexp; maybe refactor |
-| pipeline-fiberflat  | flat frames         | fiberflat      | 1/night |          | ready |
+| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |    15min/job, but lots of human time     | done |
+| fiberassign         | target catalog      | fiber assignments | 1 | <10min | done |
+| newexp-desi         | twopct.ecsv, target catalog, mock spectra, fiberassign | simspecs, fibermaps |  1/night (?) | ~5min/exp |  refactoring |
+| quickgen            | fibermaps, simspecs | frames         |  1/exp | >30min/exp | streamlining as fastframe |
+| pipeline-fiberflat  | flat frames         | fiberflat      | 1/night |   | ready |
 | pipeline-sky        | frames, fiberflats  | sky models     |  1/night |          | ready |
 | pipeline-stdstars   | frames, fiberflats, sky | stdstars   |  1/night |          | ready |
 | pipeline-fluxcal    | frames, fiberflats, sky model, stdstars | calib | 1/night | | ready |
-| pipeline-calibrate  | frames, fiberflats, sky, calib | cframes | 1/night | | ready |
-| pipeline-bricks     | cframes             | bricks         | 1/night | | ready |
-| pipeline-redshift   | bricks              | zbest          | 1/night | | refactoring |
+| pipeline-calibrate  | frames, fiberflats, sky, calib | cframes | 1/night | ~10min/exp ff,sky,std,calib| ready |
+| pipeline-bricks     | cframes             | bricks         | 1/night | | refactoring for scaling |
+| pipeline-redshift   | bricks              | zbest          | 1/night | <10min/250spec | refactoring |
 
 Status notes:
 - done = already run for 2% survey
 - refactoring = actively changing code, not yet ready to run even if inputs are ready
-- ready = code is ready to run, awaiting inputs
+- ready = code is tested and ready to run, awaiting inputs
 
 References:
 - surveysim recipe is [here](README.md)
