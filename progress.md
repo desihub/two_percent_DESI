@@ -57,8 +57,11 @@ For each step:
 
 ### quickgen: simspec to frames
 
-1/2. does not use specsim fiberloss calculations or per-fiber flatlamp spectra
+1. does not use specsim fiberloss calculations or per-fiber flatlamp spectra
+2. needs refactor for use of simspec multi-object features
 3. quickgen>30 min per exposure; simplifying functionality as "fastframe" to streamline just simspec -> frames; needs multi-exposure parallelism wrapper
+
+specsim #64 blocking issue for processing flat lamp exposures with specsim.
 
 ### pixsim+extract: simspec to frames
 
