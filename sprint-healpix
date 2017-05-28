@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--config', '-c',default='input.yaml')
 parser.add_argument('--output_dir', help='Output directory.', type=str, default='./')
 parser.add_argument('--seed', '-s', help='Seed for random number generation', type=int, default=None)
-parser.add_argument('--bounds', help='minra, maxra, mindec, maxdec', type=int,
+parser.add_argument('--bounds', help='minra, maxra, mindec, maxdec', type=float64,
                     nargs=4, default=(0.0, 360.0, -90.0, 90.0))
 parser.add_argument('--nproc', type=int, help='number of concurrent processes to use', default=24)
 args = parser.parse_args()
