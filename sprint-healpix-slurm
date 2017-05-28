@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+
+"""nside area/deg2
+
+2 859.436692696
+4 214.859173174
+8 53.7147932935
+16 13.4286983234
+32 3.35717458084
+64 0.839293645211
+128 0.209823411303
+256 0.0524558528257
+512 0.0131139632064
+
+It took 98 nodes, each node used 24 cores for 3 hours. That gives us 7K core
+hours in total. In wall clock time, taking into account the queue delays, it
+took ~24 hours to run. (edited)
+
+"""
+from __future__ import print_function, division
+
+import os
+import argparse
+import yaml
+
+import numpy as np
+import healpy
+from astropy.table import Table
+
+from desispec.log import get_logger, DEBUG
+from desitarget.mock.build import targets_truth
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--topdir', help='Top-level output directory.', type=str, default='./')
+parser.add_argument('--config', '-c',default='input.yaml')
+parser.add_argument('--seed', '-s', help='Seed for random number generation', type=int, default=None)
+parser.add_argument('--nproc', type=int, help='number of concurrent processes to use', default=24)
+parser.add_argument('--nside', help='Resolution of the (output) healpix pixels', type=int, default=8)
+args = parser.parse_args()
+
+# Read the pointings in the 2% survey and assign healpixels.  To make sure we
+# get the edges, shift the tile centers by +/-PAD in each direction.  The DESI
+# tiles are 1.605 deg in radius but to be conservative use PAD=1.7 deg.
+a = Table.read('twopct.ecsv', format='ascii.ecsv', guess=False)
+
+pad = 1.7
+ra, dec = a['RA'].data, a['DEC'].data
+
+ra = np.append(ra, [ra+pad, ra-pad])
+dec = np.append(dec, [dec+pad, dec-pad])
+ra = ra % 360.0 # enforce 0 < ra < 360
+
+superpixels = healpy.ang2pix(nside, np.radians(90-dec), np.radians(ra), nest=True)
+unique_superpixels = list(set(superpixels))
+nsuperpix = len(unique_superpixels)
+
+# Generate a grid of seeds.
+rand = np.random.RandomState(args.seed)
+pixseeds = rand.rand.randint(2**32, size=nsuperpix)
+
+# For each superpixel, determine the ra,dec boundaries and the (unique) output
+# directory.
+for pix, seed in zip(unique_superpixels, pixseeds):
+    these = np.where(pix == superpixels)[0]
+    ramin, ramax = ra[these].min(), ra[these].max()
+    decmin, decmax = dec[these].min(), dec[these].max()
+    log.info('RA, Dec bounds = {}, {}, {}, {}'.format(ramin, ramax, decmin, decmax))
+
+    prefix = '{}-{}'.format(nside, pix)
+    
+    output_dir = os.path.join(args.topdir, prefix)
+    log.info('Output directory {}'.format(output_dir))
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    slurmfile = os.path.join(output_dir, 'sprint-healpix-{}.sh'.format(prefix))
+    slurm = open(slurmfile, 'w')
+    slurm.write('#!/bin/bash\n')
+    slurm.write('\n')
+    slurm.write('#SBATCH -p debug\n')
+    slurm.write('#SBATCH -N 1\n')
+    slurm.write('#SBATCH -L SCRATCH,project\n')
+    slurm.write('#SBATCH -t 00:30:00\n')
+    slurm.write('\n')
+    slurm.write('time srun -N 1 -n 1 -c {} python sprint-healpix \ \n'.format(args.nproc))
+    slurm.write(' --config {} \ \n '.format(args.config))
+    slurm.write(' --nproc {} \ \n '.format(args.nproc))
+    slurm.write(' --output_dir {} \ \n '.format(output_dir))
+    slurm.write(' --seed {} \ \n '.format(seed))
+    slurm.write(' --bounds {} {} {} {} \ \n '.format(ramin, ramax, decmin, decmax))
+    slurm.close()
