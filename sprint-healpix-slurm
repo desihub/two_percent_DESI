@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""Wrapper script on sprint-healpix
+"""Wrapper script on sprint-healpix which generates individual SLURM scripts
 
 nside area/deg2
 2 859.436692696
@@ -21,19 +21,38 @@ From Stephen: "The nested scheme is such that the super pixel for each pixel is
 a bit shift of 2 bits, i.e. integer division by 4.  So going up 3 layers from 64
 -> 32 -> 16 -> 8 is pixnum // (4**3)"
 
+Additional comments from Stephen:
+
+    output_dir/8-{superpix}/64-{pixnum}/filename-64-{pixnum}.fits
+
+    where pixnum is the nside=64 nested pixel number, and superpix = pixnum // 4**3.
+
+    I'm not completely convinced that will be user friendly, but it does have
+    the advantages that:
+
+    * <1000 subdirectories at any level
+    
+    * everything under a 8-{superpix} subdirectory is grouped on the sky (unlike
+      the case if we just did subdir = pixnum // 100 or something like that that
+      is easier to calculate in your head but breaks spatial grouping).
+
+    * nside=8 is 53.7 deg2 which seems likely for a viable sub-unit to process
+      at NERSC per job
+
+    * nside=64 is 0.84 deg2 which seems like a viable sized sub-unit for
+      grouping targets
+
 """
 from __future__ import print_function, division
 
 import os
 import argparse
-import yaml
 
 import numpy as np
 import healpy as hp
 from astropy.table import Table
 
-from desimodel.footprint import tiles2pix, pix2tiles
-
+from desimodel.footprint import tiles2pix
 from desispec.log import get_logger
 log = get_logger()
 
@@ -44,40 +63,37 @@ def main():
     parser.add_argument('--config', '-c', default='input.yaml')
     parser.add_argument('--seed', '-s', help='Top-level seed for random number generation', type=int, default=None)
     parser.add_argument('--nproc', type=int, help='number of concurrent processes to use', default=24)
-    parser.add_argument('--nside-spectra', help='Resolution of the healpixels passed to targets_truth', type=int, default=64)
+    parser.add_argument('--nside-spectra', help='Resolution of the healpixels passed to targets_truth', type=int, default=16)
     parser.add_argument('--nside-output-dir', help='Resolution of the healpixels used to organize the output files', type=int, default=8)
-    parser.add_argument('--nsuperpix-per-node', help='Number of nside-output-dir healpixels to process per NERSC node', type=int, default=4)
+    parser.add_argument('--nsuperpix-per-node', help='Number of serial superpixels to assign to each NERSC node', type=int, default=6)
+#   parser.add_argument('--nsuperpix-per-node', help='Number of nside-output-dir healpixels to process per NERSC node', type=int, default=4)
     args = parser.parse_args()
-
-    rand = np.random.RandomState(args.seed)
 
     # Read the pointings in the 2% survey and assign healpixels.
     twopct = Table.read('twopct.ecsv', format='ascii.ecsv', guess=False)
     healpixels = tiles2pix(nside=args.nside_spectra, tiles=twopct)
 
-    # Group the (smaller) healpixels into superpixels.  
+    # Generate the vector of input seeds.
+    rand = np.random.RandomState(args.seed)
+    healseeds = rand.randint(2**32, size=len(healpixels))
+
+    # Group the (smaller) healpixels into superpixels for the high-level
+    # organization of the output directories.
     superfactor = np.int( np.log2(args.nside_spectra / args.nside_output_dir) ) # scale factor
     allsuperpix = healpixels // 4**superfactor
-
-    _, indx = np.unique(allsuperpix, return_index=True)
-    superpix = allsuperpix[np.sort(indx)]
-    #superpix = np.unique(allsuperpix)
+    superpix = np.unique(allsuperpix)
     nsuperpix = len(superpix)
 
     nnode = np.int( np.ceil(nsuperpix / args.nsuperpix_per_node) )
     superchunk = np.array_split(superpix, nnode)
 
-    # Generate a corresponding grid of seeds.
-    superseed = rand.randint(2**32, size=nsuperpix)
-    superseedchunk = np.array_split(superseed, nnode)
-
     log.info('Processing spectra in healpixels with nside = {}.'.format(args.nside_spectra))
     log.info('Number of superpixels (output directories) = {} with nside = {}.'.format(nsuperpix, args.nside_output_dir))
-    log.info('Number of nodes needed = {} with {} superpixels per node.'.format(nnode, args.nsuperpix_per_node))
+    log.info('Number of nodes needed = {} with {} superpixels (= {:.3f} deg2) per node.'.format(
+        nnode, args.nsuperpix_per_node, args.nsuperpix_per_node * hp.nside2pixarea(args.nside_output_dir, degrees=True)))
 
-    # For each superpixel, determine the ra,dec boundaries and the (unique) output
-    # directory.
-    for pix, seed in zip(superchunk, superseedchunk):
+    # Generate a SLURM script for each superpixel.
+    for pix in superchunk:
 
         slurmfile = os.path.join( args.topdir, 'slurm-{}-{}.sh'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
         log.info('Writing {}'.format(slurmfile))
@@ -90,7 +106,7 @@ def main():
         slurm.write('#SBATCH -t 00:30:00\n')
         slurm.write('\n')
 
-        for thispix, thisseed in zip(pix, seed):
+        for thispix in pix:
             prefix = '{}-{}'.format(args.nside_output_dir, thispix)
             output_dir = os.path.join(args.topdir, prefix)
 
@@ -98,21 +114,16 @@ def main():
             log.info('  Number of healpixels (nside = {}) = {} in superpixel {} (nside = {}) with total area = {:.3f} deg2.'.format(
                 args.nside_spectra, len(these), thispix, args.nside_output_dir, 
                 len(these) * hp.nside2pixarea(args.nside_spectra, degrees=True)))
-
-            slurm.write('time srun -N 1 -n 1 -c {} python sprint-healpix '.format(args.nproc))
-            slurm.write('--config {} '.format(args.config))
-            slurm.write('--nproc {} '.format(args.nproc))
-            slurm.write('--output_dir {} '.format(output_dir))
-            slurm.write('--seed {} '.format(thisseed))
-            slurm.write('--nside {} '.format(args.nside_spectra))
-            slurm.write('--healpixels {}\n'.format( ' '.join(healpixels[these].astype(str))))
-
-            if False:
-                import matplotlib.pyplot as plt
-                plt.scatter(twopct['RA'], twopct['DEC'])
-                tt = pix2tiles(args.nside_spectra, healpixels[these], tiles=twopct)
-                plt.scatter(tt['RA'], tt['DEC'], alpha=0.5)
-                plt.show()
+            
+            for smallpix, smallseed in zip(healpixels[these], healseeds[these]):
+                slurm.write('time srun -N 1 -n 1 -c {} python sprint-healpix '.format(args.nproc))
+                slurm.write('--config {} '.format(args.config))
+                slurm.write('--nproc {} '.format(args.nproc))
+                slurm.write('--output_dir {} '.format(output_dir))
+                slurm.write('--seed {} '.format(smallseed))
+                slurm.write('--nside {} '.format(args.nside_spectra))
+                slurm.write('--healpixels {}\n'.format(smallpix))
+                #slurm.write('--healpixels {}\n'.format( ' '.join(healpixels[these].astype(str))))
 
         slurm.close()
 
