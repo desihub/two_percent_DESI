@@ -99,8 +99,6 @@ def main():
                 args.nside_spectra, len(these), thispix, args.nside_output_dir, 
                 len(these) * hp.nside2pixarea(args.nside_spectra, degrees=True)))
 
-            import pdb ; pdb.set_trace()
-            
             slurm.write('time srun -N 1 -n 1 -c {} python sprint-healpix '.format(args.nproc))
             slurm.write('--config {} '.format(args.config))
             slurm.write('--nproc {} '.format(args.nproc))
