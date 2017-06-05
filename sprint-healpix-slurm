@@ -70,7 +70,14 @@ def main():
     args = parser.parse_args()
 
     # Read the pointings in the 2% survey and assign healpixels.
-    twopct = Table.read('twopct.ecsv', format='ascii.ecsv', guess=False)
+    env = 'TWOPCT_DIR'
+    if env not in os.environ:
+        log.fatal('Required ${} environment variable not set'.format(env))
+        raise EnvironmentError('Required ${} environment variable not set'.format(env))
+    
+    twopctfile = os.path.join(os.getenv('TWOPCT_DIR'), 'twopct.ecsv')
+    log.info('Reading {}'.format(twopctfile))
+    twopct = Table.read(twopctfile, format='ascii.ecsv', guess=False)
     healpixels = tiles2pix(nside=args.nside_spectra, tiles=twopct)
 
     # Generate the vector of input seeds.
@@ -116,14 +123,15 @@ def main():
                 len(these) * hp.nside2pixarea(args.nside_spectra, degrees=True)))
             
             for smallpix, smallseed in zip(healpixels[these], healseeds[these]):
-                slurm.write('time srun -N 1 -n 1 -c {} python sprint-healpix '.format(args.nproc))
+                slurm.write('time srun -N 1 -n 1 -c {} python  sprint-healpix '.format(args.nproc))
                 slurm.write('--config {} '.format(args.config))
                 slurm.write('--nproc {} '.format(args.nproc))
                 slurm.write('--output_dir {} '.format(output_dir))
                 slurm.write('--seed {} '.format(smallseed))
                 slurm.write('--nside {} '.format(args.nside_spectra))
-                slurm.write('--healpixels {}\n'.format(smallpix))
+                slurm.write('--healpixels {} & \n'.format(smallpix))
                 #slurm.write('--healpixels {}\n'.format( ' '.join(healpixels[these].astype(str))))
+            slurm.write('wait')
 
         slurm.close()
 
