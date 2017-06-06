@@ -6,7 +6,7 @@ Run redrock by hand for DC17a (2% sprint)
 
 from __future__ import absolute_import, division, print_function
 from mpi4py import MPI
-import sys, os, glob
+import sys, os, glob, time
 import numpy as np
 from redrock.external import desi
 
@@ -16,32 +16,71 @@ comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
 
-if rank == 0:
-    bricks = list()
-    for brickfile in sorted(glob.glob('bricks/*/brick-b-*.fits')):
-        #- extract brickname from /path/to/{brickname}/brick-b-{brickname}.fits
-        brickname = brickfile[-13:-5]
+def get_subdir(pix):
+    superpix = pix // 64
+    return 'spectra/8-{superpix}/64-{pix}'.format(superpix=superpix, pix=pix)
 
-        rrout = 'redrock/rr-{}.h5'.format(brickname)
-        zbout = 'redrock/zbest-{}.fits'.format(brickname)
+def get_outfiles(pix):
+    subdir = get_subdir(pix)
+    rrout = '{subdir}/rr-64-{pix}.h5'.format(subdir=subdir, pix=pix)
+    zbout = '{subdir}/zbest-64-{pix}.fits'.format(subdir=subdir, pix=pix)
+    return rrout, zbout
+
+if rank == 0:
+    t0 = time.time()
+    print('Starting at {}'.format(time.asctime()))
+    pixels = list()
+    pixdirs = sorted(glob.glob('spectra/8-*/64-*'))
+    for dirname in pixdirs:
+        pixnum = int(os.path.basename(dirname)[3:])
+        rrout, zbout = get_outfiles(pixnum)
         if os.path.exists(rrout) and os.path.exists(zbout):
-            print('skipping completed {}'.format(brickname))
+            print('skipping completed {}'.format(pixnum))
         else:
-            bricks.append(brickname)
+            superpix = pixnum // 64
+            specfiles = glob.glob('spectra/8-{}/64-{}/spectra*'.format(superpix, pixnum))
+            if len(specfiles) > 0:
+                pixels.append(pixnum)
+            else:
+                print('Skipping pix {} with no specfiles'.format(pixnum))
+
+    print('{}/{} pix left to do'.format(len(pixels), len(pixdirs)))
+    print('Initial setup took {:.1f} sec'.format(time.time() - t0))
 else:
-    bricks = None
+    pixels = None
 
 sys.stdout.flush()
-bricks = comm.bcast(bricks, root=0)
+pixels = comm.bcast(pixels, root=0)
 
-for brickname in bricks[rank::size]:
-    print('---- rank {} {}'.format(rank, brickname))
+for pix in pixels[rank::size]:
+    t0 = time.time()
+    print('---- rank {} pix {} {}'.format(rank, pix, time.asctime()))
     sys.stdout.flush()
-    rrout = 'redrock/rr-{}.h5'.format(brickname)
-    zbout = 'redrock/zbest-{}.fits'.format(brickname)
+    rrout, zbout = get_outfiles(pix)
     cmd = 'rrdesi -o {} --zbest {}'.format(rrout, zbout)
-    for brickfile in glob.glob('bricks/{}/brick-*.fits'.format(brickname)):
-        cmd = cmd + ' ' + brickfile
-    #print(cmd)
-    desi.rrdesi(cmd.split()[1:])
-        
+    
+    subdir = get_subdir(pix)
+
+    for specfile in sorted(glob.glob('{}/spectra-*.fits'.format(subdir))):
+        cmd = cmd + ' ' + specfile
+    print('RUNNING', cmd)
+    try:
+        dt0 = time.time() - t0
+        if dt0 > 2:
+            print('long setup for pix {} rank {} = {} sec'.format(pix, rank, dt0))
+        t1 = time.time()
+        ### desi.rrdesi(cmd.split()[1:])
+        os.system(cmd)
+        dt1 = time.time() - t1
+        print('FINISHED pix {} rank {} in {:.1f} sec'.format(pix, rank, dt0+dt1))
+    except Exception as err:
+        print('FAILED: pix {} rank {}'.format(pix, rank))
+        import traceback
+        traceback.print_exc()
+
+print('---- rank {} is done'.format(rank))
+sys.stdout.flush()
+
+comm.barrier()
+if rank == 0:
+    print('all done')
