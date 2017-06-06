@@ -4,25 +4,25 @@
 
 (specsim version, not pixsim version)
 
-| Script              | Inputs              | Ouptuts        |  NJobs | Time/job | Status     |
+| Script              | Inputs              | Ouptuts        |  NJobs | Time | Status     |
 |---------------------|---------------------|----------------|--------|----------|------------|
 | surveysim           | footprint           | twopct.ecsv    |      1 |     4min | done       |
-| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |    15min     | refactoring |
-| fiberassign         | target catalog      | fiber assignments | 1 | <10min | ready |
-| newexp-desi         | twopct.ecsv, target catalog, mock spectra, fiberassign | simspecs, fibermaps |  1/night (?) |  |  refactoring |
-| quickgen            | fibermaps, simspecs | frames         |  1/exp |          | waiting newexp; maybe refactor |
-| pipeline-fiberflat  | flat frames         | fiberflat      | 1/night |          | ready |
+| select_mock_targets | mock catalogs       | target catalog, mock spectra | 1/sqdeg |    15min/job, but lots of human time     | done |
+| fiberassign         | target catalog      | fiber assignments | 1 | <10min | done |
+| newexp-desi         | twopct.ecsv, target catalog, mock spectra, fiberassign | simspecs, fibermaps |  1/night (?) | ~7min/exp |  refactoring |
+| quickgen            | fibermaps, simspecs | frames         |  1/exp | >30min/exp | streamlining as fastframe |
+| pipeline-fiberflat  | flat frames         | fiberflat      | 1/night |   | ready |
 | pipeline-sky        | frames, fiberflats  | sky models     |  1/night |          | ready |
 | pipeline-stdstars   | frames, fiberflats, sky | stdstars   |  1/night |          | ready |
 | pipeline-fluxcal    | frames, fiberflats, sky model, stdstars | calib | 1/night | | ready |
-| pipeline-calibrate  | frames, fiberflats, sky, calib | cframes | 1/night | | ready |
-| pipeline-bricks     | cframes             | bricks         | 1/night | | ready |
-| pipeline-redshift   | bricks              | zbest          | 1/night | | refactoring |
+| pipeline-calibrate  | frames, fiberflats, sky, calib | cframes | 1/night | ~10min/exp ff,sky,std,calib| ready |
+| pipeline-bricks     | cframes             | bricks         | 1/night | | refactoring for scaling |
+| pipeline-redshift   | bricks              | zbest          | 1/night | <10min/250spec | refactoring |
 
 Status notes:
 - done = already run for 2% survey
 - refactoring = actively changing code, not yet ready to run even if inputs are ready
-- ready = code is ready to run, awaiting inputs
+- ready = code is tested and ready to run, awaiting inputs
 
 References:
 - surveysim recipe is [here](README.md)
@@ -49,13 +49,23 @@ For each step:
 2. Target generation needs to be MPI parallel. The final output directory structure should have less directories and files. See the checklist [here](https://github.com/desihub/desitarget/issues/169#issuecomment-296156292).
 3. A MPI parallel version.
 
+Review and fix target densities, especially ELGs and standard stars (both too low).  See Johns [QA notebook](https://github.com/desihub/desitarget/blob/sprintqa/doc/nb/twopercent-sprint-qa.ipynb).
+
+Fix duplicate TARGETIDs
+
 ### Targets, Spectra, Observing Conditions, Fiber Assignments to simspec
 
-1. Refactor in progress; final shortcuts not yet known
+1. Refactor in progress in desisim newexp branch.
 2. Skipping galsim; need object shapes from input targets or fixed GMM installation in desitarget.
 3. Performance seems ok but needs parallelism wrappers
 
 ### quickgen: simspec to frames
+
+1. does not use specsim fiberloss calculations or per-fiber flatlamp spectra
+2. needs refactor for use of simspec multi-object features
+3. quickgen>30 min per exposure; simplifying functionality as "fastframe" to streamline just simspec -> frames; needs multi-exposure parallelism wrapper
+
+specsim #64 blocking issue for processing flat lamp exposures with specsim.
 
 ### pixsim+extract: simspec to frames
 
@@ -63,15 +73,25 @@ For each step:
 
 ### Pipeline: frames to cframes (flux calibrated frames)
 
-No known issues, with a caveat that the handoff from quickgen -> frames -> pipeline has never been tested beyond running individual algorithm steps by hand.  i.e. the I/O formats and algorithms have been tested for compatibility, but the pipeline handoff has not.
+Needs missing flat lamp frames from quickgen (fastframe will provide) but otherwise handoff has been tested and is fast and parallelized.
+
+TODO: add S/N per band and propagate forward to zbest files
 
 ### Pipeline: cframes to bricks
 
 May be viable for 2%; needs parallelism refactor to scale to 20% to avoid opening and closing N>>1 files M>>1 times.
+Reorganize as healpix grouping.  Ted is working on this.
 
 ### Pipeline: Redshift Fitting
 
 desispec branch `rrdesi` lays groundwork for using redrock instead of redmonster.
 Still needs some batch job updates for running one MPI rank per brick per node.
 Redrock still at https://github.com/sbailey/redrock; needs to move to desihub.
-Redrock does ~125 targets/minute on 1 Cori node (32 cores).
+Redrock does ~125 targets/minute on 1 Cori node (32 cores); scaling depends on
+number of targets per file (more is better).
+
+z<2 QSOs have poor results, need to debug why.
+
+### Misc
+
+1. Review and update datamodel prior to 20% run
