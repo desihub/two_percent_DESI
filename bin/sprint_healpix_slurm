@@ -59,23 +59,29 @@ log = get_logger()
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--topdir', help='Top-level output directory.', type=str, default='./')
+    parser.add_argument('--twopct_dir', help='Top-level directory.', type=str, default='$TWOPCT_DIR')
     parser.add_argument('--config', '-c', default='input.yaml')
     parser.add_argument('--seed', '-s', help='Top-level seed for random number generation', type=int, default=None)
     parser.add_argument('--nproc', type=int, help='number of concurrent processes to use', default=24)
-    parser.add_argument('--nside-spectra', help='Resolution of the healpixels passed to targets_truth', type=int, default=16)
+    parser.add_argument('--nside-spectra', help='Resolution of the healpixels passed to targets_truth', type=int, default=32)
     parser.add_argument('--nside-output-dir', help='Resolution of the healpixels used to organize the output files', type=int, default=8)
-    parser.add_argument('--nsuperpix-per-node', help='Number of serial superpixels to assign to each NERSC node', type=int, default=6)
+    parser.add_argument('--nsuperpix-per-node', help='Number of serial superpixels to assign to each NERSC node', type=int, default=4)
 #   parser.add_argument('--nsuperpix-per-node', help='Number of nside-output-dir healpixels to process per NERSC node', type=int, default=4)
     args = parser.parse_args()
 
     # Read the pointings in the 2% survey and assign healpixels.
-    env = 'TWOPCT_DIR'
-    if env not in os.environ:
-        log.fatal('Required ${} environment variable not set'.format(env))
-        raise EnvironmentError('Required ${} environment variable not set'.format(env))
+    if args.twopct_dir == '$TWOPCT_DIR':
+        env = 'TWOPCT_DIR'
+        if env not in os.environ:
+            log.fatal('Required ${} environment variable not set'.format(env))
+        twopct_dir = os.getenv('TWOPCT_DIR')
+    else:
+        twopct_dir = args.twopct_dir
     
-    twopctfile = os.path.join(os.getenv('TWOPCT_DIR'), 'twopct.ecsv')
+    twopctfile = os.path.join(twopct_dir, 'twopct.ecsv')
+    if not os.path.exists(twopctfile):
+        log.fatal('Required tile file {} not found!'.format(twopctfile))
+    
     log.info('Reading {}'.format(twopctfile))
     twopct = Table.read(twopctfile, format='ascii.ecsv', guess=False)
     healpixels = tiles2pix(nside=args.nside_spectra, tiles=twopct)
@@ -99,23 +105,25 @@ def main():
     log.info('Number of nodes needed = {} with {} superpixels (= {:.3f} deg2) per node.'.format(
         nnode, args.nsuperpix_per_node, args.nsuperpix_per_node * hp.nside2pixarea(args.nside_output_dir, degrees=True)))
 
-    # Generate a SLURM script for each superpixel.
+    # Generate a SLURM script for each chunk of superpixels.
     for pix in superchunk:
-
-        slurmfile = os.path.join( args.topdir, 'slurm-{}-{}.sh'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
+        logfile = os.path.join( twopct_dir, 'log-slurm-{}-{}-%j'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
+        slurmfile = os.path.join( twopct_dir, 'slurm-{}-{}.sh'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
         log.info('Writing {}'.format(slurmfile))
 
         slurm = open(slurmfile, 'w')
         slurm.write('#!/bin/bash\n')
-        slurm.write('#SBATCH -p debug\n')
+        slurm.write('#SBATCH -p regular\n')
+        slurm.write('#SBATCH -o {}\n'.format(logfile))
         slurm.write('#SBATCH -N 1\n')
         slurm.write('#SBATCH -L SCRATCH,project\n')
-        slurm.write('#SBATCH -t 00:30:00\n')
+        slurm.write('#SBATCH -t 03:00:00\n')
         slurm.write('\n')
 
+        # Call desitarget.mock.targets_truth for each (smaller) healpixel.
         for thispix in pix:
             prefix = '{}-{}'.format(args.nside_output_dir, thispix)
-            output_dir = os.path.join(args.topdir, prefix)
+            output_dir = os.path.join(twopct_dir, prefix)
 
             these = np.where(thispix == allsuperpix)[0]
             log.info('  Number of healpixels (nside = {}) = {} in superpixel {} (nside = {}) with total area = {:.3f} deg2.'.format(
@@ -123,16 +131,14 @@ def main():
                 len(these) * hp.nside2pixarea(args.nside_spectra, degrees=True)))
             
             for smallpix, smallseed in zip(healpixels[these], healseeds[these]):
-                slurm.write('time srun -N 1 -n 1 -c {} python  sprint-healpix '.format(args.nproc))
+                slurm.write('time srun -N 1 -n 1 -c {} sprint_healpix '.format(args.nproc))
                 slurm.write('--config {} '.format(args.config))
                 slurm.write('--nproc {} '.format(args.nproc))
                 slurm.write('--output_dir {} '.format(output_dir))
                 slurm.write('--seed {} '.format(smallseed))
                 slurm.write('--nside {} '.format(args.nside_spectra))
                 slurm.write('--healpixels {} & \n'.format(smallpix))
-                #slurm.write('--healpixels {}\n'.format( ' '.join(healpixels[these].astype(str))))
-            slurm.write('wait')
-
+        slurm.write('wait\n')
         slurm.close()
 
 if __name__ == '__main__':

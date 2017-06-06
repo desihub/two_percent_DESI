@@ -9,6 +9,7 @@ This is a simplified version of select_mock_targets.
 from __future__ import print_function, division
 
 import argparse
+from time import time
 
 import yaml
 import numpy as np
@@ -31,6 +32,8 @@ log.info('Reading configuration file {}'.format(args.config))
 with open(args.config, 'r') as pfile:
     params = yaml.load(pfile)
 
+t0 = time()
 targets_truth(params, args.output_dir, seed=args.seed, nside=args.nside,
               nproc=args.nproc, verbose=True, clobber=True,
               healpixels=args.healpixels)
+log.info('All done in {:.2f} minutes!'.format( (time() - t0) / 60 ))
