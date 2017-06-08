@@ -1,0 +1,169 @@
+#!/usr/bin/env python
+
+"""Wrapper script on sprint-healpix which generates individual SLURM scripts
+
+nside area/deg2
+2 859.436692696
+4 214.859173174
+8 53.7147932935
+16 13.4286983234
+32 3.35717458084
+64 0.839293645211
+128 0.209823411303
+256 0.0524558528257
+512 0.0131139632064
+
+From Jaime: "It took 98 nodes, each node used 24 cores for 3 hours. That gives
+us 7K core hours in total. In wall clock time, taking into account the queue
+delays, it took ~24 hours to run. (edited)"
+
+From Stephen: "The nested scheme is such that the super pixel for each pixel is
+a bit shift of 2 bits, i.e. integer division by 4.  So going up 3 layers from 64
+-> 32 -> 16 -> 8 is pixnum // (4**3)"
+
+Additional comments from Stephen:
+
+    output_dir/8-{superpix}/64-{pixnum}/filename-64-{pixnum}.fits
+
+    where pixnum is the nside=64 nested pixel number, and superpix = pixnum // 4**3.
+
+    I'm not completely convinced that will be user friendly, but it does have
+    the advantages that:
+
+    * <1000 subdirectories at any level
+    
+    * everything under a 8-{superpix} subdirectory is grouped on the sky (unlike
+      the case if we just did subdir = pixnum // 100 or something like that that
+      is easier to calculate in your head but breaks spatial grouping).
+
+    * nside=8 is 53.7 deg2 which seems likely for a viable sub-unit to process
+      at NERSC per job
+
+    * nside=64 is 0.84 deg2 which seems like a viable sized sub-unit for
+      grouping targets
+
+"""
+from __future__ import print_function, division
+
+import os
+import argparse
+
+import numpy as np
+import healpy as hp
+from astropy.table import Table
+
+from desimodel.footprint import tiles2pix
+from desispec.log import get_logger
+log = get_logger()
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--twopct_dir', help='Top-level directory.', type=str, default='$TWOPCT_DIR')
+    parser.add_argument('--config', '-c', default='input.yaml')
+    parser.add_argument('--seed', '-s', help='Top-level seed for random number generation', type=int, default=None)
+    parser.add_argument('--nside-spectra', help='Resolution of the healpixels passed to targets_truth', type=int, default=16)
+    parser.add_argument('--nside-output-dir', help='Resolution of the healpixels used to organize the output files', type=int, default=8)
+    parser.add_argument('--nsuperpix-per-node', help='Number of serial superpixels to assign to each NERSC node', type=int, default=4)
+#   parser.add_argument('--nsuperpix-per-node', help='Number of nside-output-dir healpixels to process per NERSC node', type=int, default=4)
+    args = parser.parse_args()
+
+    # Read the pointings in the 2% survey and assign healpixels.
+    if args.twopct_dir == '$TWOPCT_DIR':
+        env = 'TWOPCT_DIR'
+        if env not in os.environ:
+            log.fatal('Required ${} environment variable not set'.format(env))
+        twopct_dir = os.getenv('TWOPCT_DIR')
+    else:
+        twopct_dir = args.twopct_dir
+    
+    twopctfile = os.path.join(twopct_dir, 'twopct.ecsv')
+    if not os.path.exists(twopctfile):
+        log.fatal('Required tile file {} not found!'.format(twopctfile))
+    
+    log.info('Reading {}'.format(twopctfile))
+    twopct = Table.read(twopctfile, format='ascii.ecsv', guess=False)
+    healpixels = tiles2pix(nside=args.nside_spectra, tiles=twopct)
+
+    # Generate the vector of input seeds.
+    rand = np.random.RandomState(args.seed)
+    healseeds = rand.randint(2**32, size=len(healpixels))
+
+    # Group the (smaller) healpixels into superpixels for the high-level
+    # organization of the output directories.
+    superfactor = np.int( np.log2(args.nside_spectra / args.nside_output_dir) ) # scale factor
+    allsuperpix = healpixels // 4**superfactor
+    superpix = np.unique(allsuperpix)
+    nsuperpix = len(superpix)
+
+    nnode = np.int( np.ceil(nsuperpix / args.nsuperpix_per_node) )
+    superchunk = np.array_split(superpix, nnode)
+
+    log.info('Processing spectra in healpixels with nside = {}.'.format(args.nside_spectra))
+    log.info('Number of superpixels (output directories) = {} with nside = {}.'.format(nsuperpix, args.nside_output_dir))
+    log.info('Number of nodes needed = {} with {} superpixels (= {:.3f} deg2) per node.'.format(
+        nnode, args.nsuperpix_per_node, args.nsuperpix_per_node * hp.nside2pixarea(args.nside_output_dir, degrees=True)))
+
+    # Generate a SLURM script for each chunk of superpixels.
+    for pix in superchunk:
+        logfile = os.path.join( twopct_dir, 'log-slurm-{}-{}-%j'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
+        slurmfile = os.path.join( twopct_dir, 'slurm-{}-{}.sh'.format(args.nside_output_dir, '-'.join(pix.astype(str))) )
+        log.info('Writing {}'.format(slurmfile))
+
+        slurm = open(slurmfile, 'w')
+        slurm.write('#!/bin/bash -l\n')
+        slurm.write('#SBATCH -p debug\n')
+        slurm.write('#SBATCH -N 1\n')
+        slurm.write('#SBATCH -L SCRATCH,project\n')
+        slurm.write('#SBATCH -t 00:30:00\n')
+        slurm.write('#SBATCH -o {}\n'.format(logfile))
+        slurm.write('#SBATCH --export=NONE\n'.format(logfile))
+        slurm.write('\n')
+        slurm.write('# Setup the environment\n')
+        slurm.write('module use /global/common/edison/contrib/desi/modulefiles\n')
+        slurm.write('module load desiconda/20170510-1.1.3-spectro\n')
+        slurm.write('module load desimodules/test-master\n')
+        slurm.write('module swap desiutil/1.9.4 \n')
+        slurm.write('module swap desispec/0.14.0 \n')
+        slurm.write('module swap desisim/master \n')
+        slurm.write('\n')
+        slurm.write('export PYTHONPATH=$TWOPCT_DIR/desitarget/py:$PYTHONPATH \n')
+        slurm.write('export PYTHONPATH=$TWOPCT_DIR/two_percent_DESI:$PYTHONPATH \n')
+        slurm.write('export PATH=$TWOPCT_DIR/two_percent_DESI/bin:$PATH \n')
+        slurm.write('\n')
+        slurm.write('nproc=0 \n')
+        slurm.write('if [ ${NERSC_HOST} = edison ]; then \n')
+        slurm.write('  nproc=24 \n')
+        slurm.write('else \n')
+        slurm.write('  nproc=32 \n')
+        slurm.write('fi \n')
+        slurm.write('\n')
+        slurm.write('# Force MKL to be single-threaded\n')
+        slurm.write('export MKL_NUM_THREADS=1\n')
+        slurm.write('export OMP_NUM_THREADS=1\n')
+        slurm.write('\n')
+
+        # Call desitarget.mock.targets_truth for each (smaller) healpixel.
+        for thispix in pix:
+            prefix = '{}-{}'.format(args.nside_output_dir, thispix)
+            output_dir = os.path.join(twopct_dir, prefix)
+
+            these = np.where(thispix == allsuperpix)[0]
+            log.info('  Number of healpixels (nside = {}) = {} in superpixel {} (nside = {}) with total area = {:.3f} deg2.'.format(
+                args.nside_spectra, len(these), thispix, args.nside_output_dir, 
+                len(these) * hp.nside2pixarea(args.nside_spectra, degrees=True)))
+            
+            for smallpix, smallseed in zip(healpixels[these], healseeds[these]):
+                slurm.write('time srun --export=ALL --cpu_bind=no -N 1 -n 1 -c $(nproc) sprint_healpix ')
+                slurm.write('--config {} '.format(args.config))
+                slurm.write('--nproc $(nproc)')
+                slurm.write('--output_dir {} '.format(output_dir))
+                slurm.write('--seed {} '.format(smallseed))
+                slurm.write('--nside {} '.format(args.nside_spectra))
+                slurm.write('--healpixels {} & \n'.format(smallpix))
+        slurm.write('wait\n')
+        slurm.close()
+
+if __name__ == '__main__':
+    main()
+    
