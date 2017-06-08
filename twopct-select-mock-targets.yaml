@@ -1,0 +1,76 @@
+# Replace
+#   /global/cscratch1/sd/ioannis/desi
+# with
+#   /project/projectdirs/desi
+# and use
+#   dust_dir: /project/projectdirs/desi/software/edison/dust/v0_1/maps
+#   decals_brick_info: /project/projectdirs/desi/target/catalogs/brick-info-dr3.v0.0.1.fits
+#
+dust_dir: /global/cscratch1/sd/ioannis/desi/dust/v0_1/maps
+decals_brick_info: /global/cscratch1/sd/ioannis/desi/target/catalogs/brick-info-dr3.v0.0.1.fits
+sources:
+    BGS: {
+        target_name: BGS,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/bgs/MXXL/desi_footprint/v0.0.4/BGS.hdf5,
+        format: durham_mxxl_hdf5,
+        magcut: 20.3,
+        contam: {
+            STAR: 50,
+        }
+    }
+    ELG: {
+        target_name: ELG,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.5/ELG.fits,
+        format: gaussianfield,
+        density: 2155,
+        contam: {
+            STAR: 240,
+        }
+    }
+    FAINTSTAR: {
+        target_name: FAINTSTAR,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/mws/galaxia/alpha/0.0.4_superfaint,
+        format: galaxia,
+        magcut: 23.5,
+    }
+    LRG: {
+        target_name: LRG,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.5/LRG.fits,
+        format: gaussianfield,
+        density: 350,
+    }
+    MWS_MAIN: {
+        target_name: MWS_MAIN,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/mws/galaxia/alpha/v0.0.4,
+        format: galaxia,
+    }
+    MWS_NEARBY: {
+        target_name: MWS_NEARBY,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/mws/100pc/v0.0.3/mock_100pc.fits,
+        format: 100pc,
+    }
+    MWS_WD: {
+        target_name: MWS_WD,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/mws/wd/v0.0.2/mock_wd.fits,
+        format: wd,
+    }
+    QSO: {
+        target_name: QSO,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.5/QSO.fits,
+        format: gaussianfield,
+        density: 120,
+        contam: {
+            GALAXY: 27,
+            STAR: 63,
+        },
+        LYA: {
+            mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/lya_forest/v0.0.2/metadata-simpleSpec.fits,
+            density: 50,
+        }
+    }
+    SKY: {
+        target_name: SKY,
+        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.1/2048/random.fits,
+        format: gaussianfield,
+        density: 1400,
+    }
