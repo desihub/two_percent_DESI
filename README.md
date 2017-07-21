@@ -1,68 +1,44 @@
-# Two Percent Sprint Data Challenge
+# two percent of DESI observations
 
-Simulating 2% of the DESI survey
+This repo has files related to the 2017 data challenges of processing
+2% of DESI observations.
 
-## Simulated Observations
+## dc17a ##
 
-1. Install version 0.4.0 of the `desisurvey` and `surveysim` packages, e.g.:
-```
-cd /tmp
-git clone git@github.com:desihub/desisurvey.git
-cd desisurvey
-git checkout 0.4.0
-python setup.py develop
-```
-The `develop` option is required since the file `data/tiles-info.fits` is not copied by the install.  Note that the python version `desisurvey 0.3.1.dev1` does not match the tag.
+Spring 2017.
 
-```
-cd /tmp
-git clone git@github.com:desihub/surveysim.git
-cd surveysim
-git checkout 8e796cd
-python setup.py install
-```
-We use the commit `8e796cd` right after the 0.4.0 tag since it provides an necessary bug fix. Note that the python version `surveysim 0.3.1.dev93` does not match the tag.
+The original "2% sprint" that turned out to take quite awhile.
+We succeeded at processing 2%, but not in a clean, easy, documented,
+and reproducible way.
 
-2. Simulate the first year of observations using the cmd-line script:
-```
-cd /tmp
-mkdir work
-cd work
-% surveysim --start 2019-08-28 --stop 2020-07-13 --seed 123
-```
+## mini ##
 
-3. Select the ? tiles observed in the first 35 nights from the list of all observed tiles with:
-```
-import astropy.table
-def get_twopct(start='2019-08-28', stop='2019-10-01'):
-    # Read all simulated observations.
-    t = astropy.table.Table.read('obslist_all.fits')
-    # Select the two-percent subsample based on MJD.
-    start = astropy.time.Time(start)
-    stop = astropy.time.Time(stop)
-    num_nights = stop.mjd - start.mjd + 1
-    sel = (t['STATUS'] > 0) & (t['MJD']>= start.mjd) & (t['MJD'] <= stop.mjd)
-    t = t[sel]
-    for pass_num in range(8):
-        print('Observed {0:7d} tiles from PASS {1}'
-              .format(len(t[t['PASS'] == pass_num]), pass_num))
-    print('Observed {0:7d} tiles total during {1} nights'.format(len(t), num_nights))
-    # Write selected columns to an ECSV file.
-    t = t[['MJD', 'EXPTIME', 'PROGRAM', 'PASS', 'TILEID', 'RA', 'DEC',
-           'MOONFRAC', 'MOONDIST', 'MOONALT', 'SEEING', 'AIRMASS']]
-    t.meta['START'] = str(start.datetime.date())
-    t.meta['STOP'] = str(stop.datetime.date())
-    t.write('twopct.ecsv', format='ascii.ecsv')
-```
-Summary statistics for this sample:
-```
-Observed     152 tiles from PASS 0
-Observed      14 tiles from PASS 1
-Observed       2 tiles from PASS 2
-Observed       1 tiles from PASS 3
-Observed      44 tiles from PASS 4
-Observed     122 tiles from PASS 5
-Observed       4 tiles from PASS 6
-Observed       1 tiles from PASS 7
-Observed     340 tiles total during 35.0 nights
-```
+Summer 2017.
+
+Post-dc17a, establishing the steps for processing just 5 tiles end-to-end
+and fixing dataflow issues along the way.  It turns out that 2% of DESI
+is an unwieldy amount of data for testing.  Even 5 tiles = 25k spectra isn't
+trivial.
+
+## dc17b ##
+
+Not started yet.  This will be a redo of dc17a, using what we learned/fixed
+from the dc17a and the mini-sprint to redo 2% of DESI with the latest code
+in a more streamlined and documented manner.
+
+## Future ##
+
+### 2% to full-depth ###
+
+dc17a and dc17b are 2% of observations, which cover more than 2% of the area
+but to only a single layer of depth.  We could also do a test with 2% of the
+area to full depth, which would be especially useful for Lyman-alpha studies.
+
+### 2% with raw data ###
+
+Do this including pixel-level simulations + extractions instead of
+spectral-level simulations.
+
+### Scaling up ###
+
+Then onwards to 5%, 20%, 100%...
