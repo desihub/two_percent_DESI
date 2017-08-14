@@ -50,10 +50,10 @@ def find_specfiles(reduxdir=None, outdir=None):
     specfiles = np.array(sorted(glob.glob(reduxdir+'/spectra-*/*/*/spectra*.fits')))
 
     #---- TESTING
-    pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
-    ii = (pixels//256) == 75
-    specfiles = specfiles[ii]
-    pixels = pixels[ii]
+    # pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
+    # ii = (pixels//256) == 75
+    # specfiles = specfiles[ii]
+    # pixels = pixels[ii]
     #---- TESTING
 
     zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=outdir)
