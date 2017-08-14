@@ -1,0 +1,206 @@
+#!/usr/bin/env python
+
+"""
+Run redrock by hand for DC17a (2% sprint)
+"""
+
+from __future__ import absolute_import, division, print_function
+import sys, os, glob, time
+import argparse
+import numpy as np
+from astropy.io import fits
+from redrock.external import desi
+import desispec.io
+
+def weighted_partition(weights, n):
+    sumweights = np.zeros(n, dtype=float)
+    groups = list()
+    for i in range(n):
+        groups.append(list())
+    weights = np.asarray(weights)
+    for i in np.argsort(-weights):
+        j = np.argmin(sumweights)
+        groups[j].append(i)
+        sumweights[j] += weights[i]
+
+    return groups, np.array([np.sum(x) for x in sumweights])
+
+def spectra2outfiles(specfiles, prefix, ext=None, outdir=None):
+    outfiles = list()
+    for specfile in specfiles:
+        dirname, basename = os.path.split(specfile)
+        outfile = basename.replace('spectra', prefix)
+        if ext is not None:
+            outfile = outfile.replace('.fits', ext)
+
+        if outdir is None:
+            outfiles.append(os.path.join(dirname, outfile))
+        else:
+            outfiles.append(os.path.join(outdir, outfile))
+
+    return np.array(outfiles)
+
+def find_specfiles(reduxdir=None, outdir=None):
+    '''
+    TODO: document
+    '''
+    if reduxdir is None:
+        reduxdir = desispec.io.specprod_root()
+
+    specfiles = np.array(sorted(glob.glob(reduxdir+'/spectra-*/*/*/spectra*.fits')))
+
+    #---- TESTING
+    # pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
+    # ii = (pixels//256) == 75
+    # specfiles = specfiles[ii]
+    # pixels = pixels[ii]
+    #---- TESTING
+
+    zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=outdir)
+    rrfiles = spectra2outfiles(specfiles, 'rr', outdir=outdir, ext='.h5')
+    
+    npix = len(specfiles)
+    todo = np.ones(npix, dtype=bool)
+    for i in range(npix):
+        if os.path.exists(zbfiles[i]) and os.path.exists(rrfiles[i]):
+            todo[i] = False
+
+    return specfiles[todo]
+
+def group_specfiles(specfiles, maxnodes=256):
+    '''
+    Group specfiles to balance runtimes
+    
+    Returns (groups, grouptimes):
+      * groups: list of lists of indices to specfiles
+      * grouptimes: list of expected runtimes for that group
+    '''
+    npix = len(specfiles)
+    ntargets = np.zeros(npix, dtype=int)
+    for i in range(npix):
+        fm = fits.getdata(specfiles[i], 'FIBERMAP')
+        ntargets[i] = len(np.unique(fm['TARGETID']))
+
+    runtimes = 30 + 0.6*ntargets
+    
+    #- aim for 25 minutes, but don't exceed maxnodes number of nodes
+    numnodes = min(maxnodes, int(np.ceil(np.sum(runtimes)/(25*60))))
+    
+    groups, grouptimes = weighted_partition(runtimes, numnodes)
+    ntargets = np.array([np.sum(ntargets[ii]) for ii in groups])
+    return groups, ntargets, grouptimes
+
+def main():
+    parser = argparse.ArgumentParser(usage = "{prog} [options]")
+    parser.add_argument("--reduxdir", type=str,  help="input redux base directory")
+    parser.add_argument("--outdir", type=str,  help="output directory")
+    parser.add_argument("--ncpu", type=int,  help="number of multiprocessing processes per MPI rank")
+    parser.add_argument("--mpi", action="store_true", help="Use MPI parallelism")
+    parser.add_argument("--dryrun", action="store_true", help="Generate but don't run commands")
+    parser.add_argument("--maxnodes", type=int, default=256, help="maximum number of nodes to use")
+    parser.add_argument("--plan", action="store_true", help="plan how many nodes to use and pixel distribution")
+    args = parser.parse_args()
+
+    if args.plan:
+        plan(args)
+    else:
+        run_redrock(args)
+
+def plan(args):
+    specfiles = find_specfiles(args.reduxdir, args.outdir)
+    groups, ntargets, grouptimes = group_specfiles(specfiles, args.maxnodes)
+    if np.max(grouptimes) <= (25*60):
+        queue = 'debug'
+    else:
+        queue = 'regular'
+
+    numnodes = len(groups)
+
+    print('{} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
+    print('{} nodes in {} queue -> runtime ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
+        numnodes, queue, np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
+    ))
+    return specfiles, groups, grouptimes
+
+def run_redrock(args):
+    if args.mpi:
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+        size = comm.Get_size()
+        rank = comm.Get_rank()
+    else:
+        comm = None
+        size = 1
+        rank = 0
+
+    args.maxnodes = min(args.maxnodes, size)
+
+    if rank == 0:
+        ntot = 0
+        t0 = time.time()
+        print('Starting at {}'.format(time.asctime()))
+        specfiles, groups, grouptimes = plan(args)
+        print('Initial setup took {:.1f} sec'.format(time.time() - t0))
+    else:
+        specfiles, groups, grouptimes = None, None, None
+
+    sys.stdout.flush()
+    if comm is not None:
+        groups = comm.bcast(groups, root=0)
+        specfiles = comm.bcast(specfiles, root=0)
+
+    if len(groups) != size:
+        #--- DEBUG ---
+        import IPython
+        IPython.embed()
+        #--- DEBUG ---
+
+    assert len(groups) == size
+    assert len(np.concatenate(groups)) == len(specfiles)
+
+    pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
+    zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=args.outdir)
+    rrfiles = spectra2outfiles(specfiles, 'rr', outdir=args.outdir, ext='.h5')
+
+    for i in groups[rank]:
+        t0 = time.time()
+        print('---- rank {} pix {} {}'.format(rank, pixels[i], time.asctime()))
+        sys.stdout.flush()
+
+        cmd = 'rrdesi {} -o {} --zbest {}'.format(specfiles[i], rrfiles[i], zbfiles[i])
+
+        if args.ncpu is not None:
+            cmd += ' --ncpu {}'.format(args.ncpu)
+
+        print('Rank {} RUNNING {}'.format(rank, cmd))
+        sys.stdout.flush()
+
+        if args.dryrun:
+            continue
+    
+        try:
+            dt0 = time.time() - t0
+            if dt0 > 2:
+                print('long setup for pix {} rank {} = {} sec'.format(pix, rank, dt0))
+            t1 = time.time()
+            #- memory leak?  Try making system call instead
+            ### desi.rrdesi(cmd.split()[1:])
+            os.system(cmd)
+            dt1 = time.time() - t1
+            print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
+        except Exception as err:
+            print('FAILED: pix {} rank {}'.format(pixels[i], rank))
+            import traceback
+            traceback.print_exc()
+
+    print('---- rank {} is done'.format(rank))
+    sys.stdout.flush()
+
+    if comm is not None:
+        comm.barrier()
+
+    if rank == 0:
+        print('all done at {}'.format(time.asctime()))
+
+if __name__ == '__main__':
+    main()
