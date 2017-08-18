@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Run redrock by hand for DC17a (2% sprint)
+MPI wrapper for redrock
 """
 
 from __future__ import absolute_import, division, print_function
@@ -48,6 +48,8 @@ def find_specfiles(reduxdir=None, outdir=None):
         reduxdir = desispec.io.specprod_root()
 
     specfiles = np.array(sorted(glob.glob(reduxdir+'/spectra-*/*/*/spectra*.fits')))
+    if len(specfiles) == 0:
+        raise IOError('no specfiles found')
 
     #---- TESTING
     # pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
@@ -67,7 +69,7 @@ def find_specfiles(reduxdir=None, outdir=None):
 
     return specfiles[todo]
 
-def group_specfiles(specfiles, maxnodes=256):
+def group_specfiles(specfiles, maxnodes=256, comm=None):
     '''
     Group specfiles to balance runtimes
     
@@ -75,17 +77,29 @@ def group_specfiles(specfiles, maxnodes=256):
       * groups: list of lists of indices to specfiles
       * grouptimes: list of expected runtimes for that group
     '''
+    if comm is None:
+        rank, size = 0, 1
+    else:
+        rank, size = comm.rank, comm.size
+
     npix = len(specfiles)
-    ntargets = np.zeros(npix, dtype=int)
-    for i in range(npix):
-        fm = fits.getdata(specfiles[i], 'FIBERMAP')
+    pixgroups = np.array_split(np.arange(npix), size)
+    ntargets = np.zeros(len(pixgroups[rank]), dtype=int)
+    for i, j in enumerate(pixgroups[rank]):
+        fm = fits.getdata(specfiles[j], 'FIBERMAP')
         ntargets[i] = len(np.unique(fm['TARGETID']))
 
+    if comm is not None:
+        ntargets = comm.gather(ntargets)
+        if rank == 0:
+            ntargets = np.concatenate(ntargets)
+        ntargets = comm.bcast(ntargets, root=0)
+
     runtimes = 30 + 0.6*ntargets
-    
+
     #- aim for 25 minutes, but don't exceed maxnodes number of nodes
     numnodes = min(maxnodes, int(np.ceil(np.sum(runtimes)/(25*60))))
-    
+
     groups, grouptimes = weighted_partition(runtimes, numnodes)
     ntargets = np.array([np.sum(ntargets[ii]) for ii in groups])
     return groups, ntargets, grouptimes
@@ -101,59 +115,111 @@ def main():
     parser.add_argument("--plan", action="store_true", help="plan how many nodes to use and pixel distribution")
     args = parser.parse_args()
 
-    if args.plan:
-        plan(args)
+    if args.mpi:
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
     else:
-        run_redrock(args)
+        comm = None
 
-def plan(args):
-    specfiles = find_specfiles(args.reduxdir, args.outdir)
-    groups, ntargets, grouptimes = group_specfiles(specfiles, args.maxnodes)
-    if np.max(grouptimes) <= (25*60):
+    if args.plan:
+        plan(args, comm=comm)
+    else:
+        run_redrock(args, comm=comm)
+
+def plan(args, comm=None):
+    t0 = time.time()
+    if comm is None:
+        rank, size = 0, 1
+    else:
+        rank, size = comm.rank, comm.size
+
+    if rank == 0:
+        specfiles = find_specfiles(args.reduxdir, args.outdir)
+    else:
+        specfiles = None
+
+    if comm is not None:
+        specfiles = comm.bcast(specfiles, root=0)
+
+    if len(specfiles) == 0:
+        if rank == 0:
+            print('All specfiles processed')
+        return list(), list(), list()
+
+    groups, ntargets, grouptimes = group_specfiles(specfiles, args.maxnodes, comm=comm)
+
+    plantime = time.time() - t0
+    if plantime + np.max(grouptimes) <= (25*60):
         queue = 'debug'
     else:
         queue = 'regular'
 
     numnodes = len(groups)
 
-    print('{} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
-    print('{} nodes in {} queue -> runtime ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
-        numnodes, queue, np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
-    ))
+    if rank == 0:
+        print('{} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
+        print('plan time {:.1f} minutes'.format(plantime / 60))
+        print('{} nodes in {} queue -> runtime ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
+            numnodes, queue, np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
+        ))
+
+    jobtime = int(1.15 * (plantime + np.max(grouptimes)))
+    jobhours = jobtime // 3600
+    jobminutes = (jobtime - jobhours*3600) // 60
+    jobseconds = jobtime - jobhours*3600 - jobminutes*60
+
+    if os.getenv('NERSC_HOST') == 'cori':
+        maxproc = 64
+    elif os.getenv('NERSC_HOST') == 'edison':
+        maxproc = 48
+    else:
+        maxproc = 8
+
+    if rank == 0:
+        print('#!/bin/bash')
+        print('#SBATCH -N {}'.format(numnodes))
+        print('#SBATCH -p {}'.format(queue))
+        print('#SBATCH -J redrock')
+        if os.getenv('NERSC_HOST') == 'cori':
+            print('#SBATCH -C haswell')
+        print('#SBATCH -t {:02d}:{:02d}:{:02d}'.format(jobhours, jobminutes, jobseconds))
+        print()
+        print('export DESI_SPECTRO_REDUX={}'.format(os.getenv('DESI_SPECTRO_REDUX')))
+        print('export SPECPROD={}'.format(os.getenv('SPECPROD')))
+        print()
+        print('export OMP_NUM_THREADS=1')
+        print('unset OMP_PLACES')
+        print('unset OMP_PROC_BIND')
+        print('export MPICH_GNI_FORK_MODE=FULLCOPY')
+        print()
+        print('nodes=$SLURM_JOB_NUM_NODES')
+        print('srun -N $nodes -n $nodes -c {} --cpu_bind=cores {} --mpi --ncpu {}'.format(
+            maxproc, os.path.abspath(__file__), maxproc//2
+        ))
+
     return specfiles, groups, grouptimes
 
-def run_redrock(args):
-    if args.mpi:
-        from mpi4py import MPI
-        comm = MPI.COMM_WORLD
-        size = comm.Get_size()
-        rank = comm.Get_rank()
+def run_redrock(args, comm=None):
+    if comm is None:
+        rank, size = 0, 1
     else:
-        comm = None
-        size = 1
-        rank = 0
+        rank, size = comm.rank, comm.size
 
     args.maxnodes = min(args.maxnodes, size)
 
+    t0 = time.time()
     if rank == 0:
-        ntot = 0
-        t0 = time.time()
         print('Starting at {}'.format(time.asctime()))
-        specfiles, groups, grouptimes = plan(args)
+
+    specfiles, groups, grouptimes = plan(args, comm=comm)
+
+    if rank == 0:
         print('Initial setup took {:.1f} sec'.format(time.time() - t0))
-    else:
-        specfiles, groups, grouptimes = None, None, None
 
     sys.stdout.flush()
     if comm is not None:
         groups = comm.bcast(groups, root=0)
         specfiles = comm.bcast(specfiles, root=0)
-
-    if len(groups) != size:
-        #--- DEBUG ---
-        import IPython
-        IPython.embed()
-        #--- DEBUG ---
 
     assert len(groups) == size
     assert len(np.concatenate(groups)) == len(specfiles)
