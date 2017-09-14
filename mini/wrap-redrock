@@ -5,7 +5,7 @@ MPI wrapper for redrock
 """
 
 from __future__ import absolute_import, division, print_function
-import sys, os, glob, time
+import sys, os, glob, time, subprocess
 import argparse
 import numpy as np
 from astropy.io import fits
@@ -98,7 +98,10 @@ def group_specfiles(specfiles, maxnodes=256, comm=None):
     runtimes = 30 + 0.6*ntargets
 
     #- aim for 25 minutes, but don't exceed maxnodes number of nodes
-    numnodes = min(maxnodes, int(np.ceil(np.sum(runtimes)/(25*60))))
+    if comm is not None:
+        numnodes = comm.size
+    else:
+        numnodes = min(maxnodes, int(np.ceil(np.sum(runtimes)/(25*60))))
 
     groups, grouptimes = weighted_partition(runtimes, numnodes)
     ntargets = np.array([np.sum(ntargets[ii]) for ii in groups])
@@ -251,9 +254,16 @@ def run_redrock(args, comm=None):
             t1 = time.time()
             #- memory leak?  Try making system call instead
             ### desi.rrdesi(cmd.split()[1:])
-            os.system(cmd)
+            err = subprocess.call(cmd.split())
             dt1 = time.time() - t1
-            print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
+            if err == 0:
+                print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
+                for outfile in [rrfiles[i], zbfiles[i]]:
+                    if not os.path.exists(outfile):
+                        print('ERROR pix {} missing {}'.format(outfile, rrfiles[i]))
+
+            else:
+                print('FAILED pix {} rank {} in {:.1f} sec error code {}'.format(pixels[i], rank, dt0+dt1, err))
         except Exception as err:
             print('FAILED: pix {} rank {}'.format(pixels[i], rank))
             import traceback
