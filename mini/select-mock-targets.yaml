@@ -71,7 +71,8 @@ sources:
     }
     SKY: {
         target_name: SKY,
-        mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.1/2048/random.fits,
+        # mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/GaussianRandomField/v0.0.1/2048/random.fits,
+        mock_dir_name: /project/projectdirs/desi/users/sjbailey/mocks/sky/0.1/newsky.fits,
         format: gaussianfield,
         density: 1400,
     }
