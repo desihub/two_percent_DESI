@@ -51,13 +51,6 @@ def find_specfiles(reduxdir=None, outdir=None):
     if len(specfiles) == 0:
         raise IOError('no specfiles found')
 
-    #---- TESTING
-    # pixels = np.array([int(os.path.basename(os.path.dirname(x))) for x in specfiles])
-    # ii = (pixels//256) == 75
-    # specfiles = specfiles[ii]
-    # pixels = pixels[ii]
-    #---- TESTING
-
     zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=outdir)
     rrfiles = spectra2outfiles(specfiles, 'rr', outdir=outdir, ext='.h5')
     
@@ -159,24 +152,25 @@ def plan(args, comm=None):
 
     numnodes = len(groups)
 
-    if rank == 0:
-        print('{} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
-        print('plan time {:.1f} minutes'.format(plantime / 60))
-        print('{} nodes in {} queue -> runtime ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
-            numnodes, queue, np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
-        ))
-
-    jobtime = int(1.15 * (plantime + np.max(grouptimes)))
-    jobhours = jobtime // 3600
-    jobminutes = (jobtime - jobhours*3600) // 60
-    jobseconds = jobtime - jobhours*3600 - jobminutes*60
-
     if os.getenv('NERSC_HOST') == 'cori':
         maxproc = 64
     elif os.getenv('NERSC_HOST') == 'edison':
         maxproc = 48
     else:
         maxproc = 8
+
+    if args.ncpu is None:
+        args.ncpu = maxproc // 2
+
+    #- scale longer if purposefullying using fewer cores (e.g. for memory)
+    if args.ncpu < maxproc // 2:
+        scale = (maxproc//2) / args.ncpu
+        grouptimes *= scale
+
+    jobtime = int(1.15 * (plantime + np.max(grouptimes)))
+    jobhours = jobtime // 3600
+    jobminutes = (jobtime - jobhours*3600) // 60
+    jobseconds = jobtime - jobhours*3600 - jobminutes*60
 
     if rank == 0:
         print('#!/bin/bash')
@@ -187,6 +181,13 @@ def plan(args, comm=None):
             print('#SBATCH -C haswell')
         print('#SBATCH -t {:02d}:{:02d}:{:02d}'.format(jobhours, jobminutes, jobseconds))
         print()
+        print('# {} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
+        ### print('# plan time {:.1f} minutes'.format(plantime / 60))
+        print('# Using {} nodes in {} queue'.format(numnodes, queue))
+        print('# expected rank runtimes ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
+            np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
+        ))
+        print()
         print('export DESI_SPECTRO_REDUX={}'.format(os.getenv('DESI_SPECTRO_REDUX')))
         print('export SPECPROD={}'.format(os.getenv('SPECPROD')))
         print()
@@ -196,8 +197,8 @@ def plan(args, comm=None):
         print('export MPICH_GNI_FORK_MODE=FULLCOPY')
         print()
         print('nodes=$SLURM_JOB_NUM_NODES')
-        print('srun -N $nodes -n $nodes -c {} --cpu_bind=cores {} --mpi --ncpu {}'.format(
-            maxproc, os.path.abspath(__file__), maxproc//2
+        print('srun -N $nodes -n $nodes -c {} {} --mpi --ncpu {}'.format(
+            maxproc, os.path.abspath(__file__), args.ncpu,
         ))
 
     return specfiles, groups, grouptimes
@@ -248,22 +249,28 @@ def run_redrock(args, comm=None):
             continue
     
         try:
-            dt0 = time.time() - t0
-            if dt0 > 2:
-                print('long setup for pix {} rank {} = {} sec'.format(pix, rank, dt0))
-            t1 = time.time()
-            #- memory leak?  Try making system call instead
-            ### desi.rrdesi(cmd.split()[1:])
-            err = subprocess.call(cmd.split())
-            dt1 = time.time() - t1
-            if err == 0:
-                print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
-                for outfile in [rrfiles[i], zbfiles[i]]:
-                    if not os.path.exists(outfile):
-                        print('ERROR pix {} missing {}'.format(outfile, rrfiles[i]))
+            maxtries = 2
+            for retry in range(maxtries):
+                dt0 = time.time() - t0
+                if dt0 > 2:
+                    print('long setup for pix {} rank {} = {} sec'.format(pix, rank, dt0))
+                t1 = time.time()
+                #- memory leak?  Try making system call instead
+                ### desi.rrdesi(cmd.split()[1:])
+                err = subprocess.call(cmd.split())
+                dt1 = time.time() - t1
+                if err == 0:
+                    print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
+                    for outfile in [rrfiles[i], zbfiles[i]]:
+                        if not os.path.exists(outfile):
+                            print('ERROR pix {} missing {}'.format(outfile, rrfiles[i]))
+                    break  #- don't need to retry
+                else:
+                    print('FAILED pix {} rank {} try {} in {:.1f} sec error code {}'.format(pixels[i], rank, retry, dt0+dt1, err))
+                    if retry == maxtries-1:
+                        print('FATAL pix {} failed {} times; giving up'.format(pixels[i], maxtries))
+                    time.sleep(np.random.uniform(1,5))
 
-            else:
-                print('FAILED pix {} rank {} in {:.1f} sec error code {}'.format(pixels[i], rank, dt0+dt1, err))
         except Exception as err:
             print('FAILED: pix {} rank {}'.format(pixels[i], rank))
             import traceback
@@ -276,7 +283,12 @@ def run_redrock(args, comm=None):
         comm.barrier()
 
     if rank == 0:
+        for outfile in zbfiles:
+            if not os.path.exists(outfile):
+                print('ERROR missing {}'.format(outfile))
+
         print('all done at {}'.format(time.asctime()))
+
 
 if __name__ == '__main__':
     main()
