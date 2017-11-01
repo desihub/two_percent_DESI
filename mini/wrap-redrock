@@ -237,11 +237,14 @@ def run_redrock(args, comm=None):
         sys.stdout.flush()
 
         cmd = 'rrdesi {} -o {} --zbest {}'.format(specfiles[i], rrfiles[i], zbfiles[i])
+        logfile = rrfiles[i].replace('.h5', '.log')
+        assert logfile != rrfiles[i]
 
         if args.ncpu is not None:
             cmd += ' --ncpu {}'.format(args.ncpu)
 
         print('Rank {} RUNNING {}'.format(rank, cmd))
+        print('LOGGING to {}'.format(logfile))
         sys.stdout.flush()
 
         if args.dryrun:
@@ -253,7 +256,8 @@ def run_redrock(args, comm=None):
                 t1 = time.time()
                 #- memory leak?  Try making system call instead
                 ### desi.rrdesi(cmd.split()[1:])
-                err = subprocess.call(cmd.split())
+                with open(logfile, 'a') as log:
+                    err = subprocess.call(cmd.split(), stdout=log, stderr=log)
                 dt1 = time.time() - t1
                 if err == 0:
                     print('FINISHED pix {} rank {} try {} in {:.1f} sec'.format(pixels[i], rank, retry, dt1))
