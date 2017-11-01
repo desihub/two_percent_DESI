@@ -233,7 +233,6 @@ def run_redrock(args, comm=None):
     rrfiles = spectra2outfiles(specfiles, 'rr', outdir=args.outdir, ext='.h5')
 
     for i in groups[rank]:
-        t0 = time.time()
         print('---- rank {} pix {} {}'.format(rank, pixels[i], time.asctime()))
         sys.stdout.flush()
 
@@ -251,28 +250,26 @@ def run_redrock(args, comm=None):
         try:
             maxtries = 2
             for retry in range(maxtries):
-                dt0 = time.time() - t0
-                if dt0 > 2:
-                    print('long setup for pix {} rank {} = {} sec'.format(pix, rank, dt0))
                 t1 = time.time()
                 #- memory leak?  Try making system call instead
                 ### desi.rrdesi(cmd.split()[1:])
                 err = subprocess.call(cmd.split())
                 dt1 = time.time() - t1
                 if err == 0:
-                    print('FINISHED pix {} rank {} in {:.1f} sec'.format(pixels[i], rank, dt0+dt1))
+                    print('FINISHED pix {} rank {} try {} in {:.1f} sec'.format(pixels[i], rank, retry, dt1))
                     for outfile in [rrfiles[i], zbfiles[i]]:
                         if not os.path.exists(outfile):
                             print('ERROR pix {} missing {}'.format(outfile, rrfiles[i]))
                     break  #- don't need to retry
                 else:
-                    print('FAILED pix {} rank {} try {} in {:.1f} sec error code {}'.format(pixels[i], rank, retry, dt0+dt1, err))
+                    print('FAILED pix {} rank {} try {} in {:.1f} sec error code {}'.format(pixels[i], rank, retry, dt1, err))
                     if retry == maxtries-1:
                         print('FATAL pix {} failed {} times; giving up'.format(pixels[i], maxtries))
-                    time.sleep(np.random.uniform(1,5))
+                    else:
+                        time.sleep(np.random.uniform(1,5))
 
         except Exception as err:
-            print('FAILED: pix {} rank {}'.format(pixels[i], rank))
+            print('FAILED: pix {} rank {} raised an exception'.format(pixels[i], rank))
             import traceback
             traceback.print_exc()
 
