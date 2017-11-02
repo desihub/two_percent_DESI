@@ -66,6 +66,7 @@ sources:
         LYA: {
             mock_dir_name: /global/cscratch1/sd/ioannis/desi/mocks/lya_forest/v0.0.2/metadata-simpleSpec.fits,
             density: 50,
+            zcut: 2.1,
         }
     }
     SKY: {
