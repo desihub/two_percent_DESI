@@ -2,6 +2,18 @@
 
 Work in progress based on desimodules test-release intended for tag 17.11.
 
+Update: this was intended to be more reproducible than the original dc17a
+two percent sprint, but we only partially acheived that.  Some of what is
+here still involves fixing things in master and proceeding, but we ran out
+of time before the December 2017 SLAC workshop to fully rerun with tagged
+code.  We'll release this as dc17b anyway, and try again for dc17c (or dc18a?).
+
+Final files in:
+/project/projectdirs/desi/datachallenge/dc17bk
+
+Stephen Bailey
+December 2017
+
 ## basic setup
 
 mkdir -p $SCRATCH/desi/dc17b/survey
