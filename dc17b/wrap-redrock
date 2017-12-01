@@ -1,0 +1,301 @@
+#!/usr/bin/env python
+
+"""
+MPI wrapper for redrock
+"""
+
+from __future__ import absolute_import, division, print_function
+import sys, os, glob, time, subprocess
+import argparse
+import numpy as np
+from astropy.io import fits
+from redrock.external import desi
+import desispec.io
+
+def weighted_partition(weights, n):
+    sumweights = np.zeros(n, dtype=float)
+    groups = list()
+    for i in range(n):
+        groups.append(list())
+    weights = np.asarray(weights)
+    for i in np.argsort(-weights):
+        j = np.argmin(sumweights)
+        groups[j].append(i)
+        sumweights[j] += weights[i]
+
+    return groups, np.array([np.sum(x) for x in sumweights])
+
+def spectra2outfiles(specfiles, prefix, ext=None, outdir=None):
+    outfiles = list()
+    for specfile in specfiles:
+        dirname, basename = os.path.split(specfile)
+        outfile = basename.replace('spectra', prefix)
+        if ext is not None:
+            outfile = outfile.replace('.fits', ext)
+
+        if outdir is None:
+            outfiles.append(os.path.join(dirname, outfile))
+        else:
+            outfiles.append(os.path.join(outdir, outfile))
+
+    return np.array(outfiles)
+
+def find_specfiles(reduxdir=None, outdir=None):
+    '''
+    TODO: document
+    '''
+    if reduxdir is None:
+        reduxdir = desispec.io.specprod_root()
+
+    specfiles = np.array(sorted(glob.glob(reduxdir+'/spectra-*/*/*/spectra*.fits')))
+    if len(specfiles) == 0:
+        raise IOError('no specfiles found')
+
+    zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=outdir)
+    rrfiles = spectra2outfiles(specfiles, 'rr', outdir=outdir, ext='.h5')
+    
+    npix = len(specfiles)
+    todo = np.ones(npix, dtype=bool)
+    for i in range(npix):
+        if os.path.exists(zbfiles[i]) and os.path.exists(rrfiles[i]):
+            todo[i] = False
+
+    return specfiles[todo]
+
+def group_specfiles(specfiles, maxnodes=256, comm=None):
+    '''
+    Group specfiles to balance runtimes
+    
+    Returns (groups, grouptimes):
+      * groups: list of lists of indices to specfiles
+      * grouptimes: list of expected runtimes for that group
+    '''
+    if comm is None:
+        rank, size = 0, 1
+    else:
+        rank, size = comm.rank, comm.size
+
+    npix = len(specfiles)
+    pixgroups = np.array_split(np.arange(npix), size)
+    ntargets = np.zeros(len(pixgroups[rank]), dtype=int)
+    for i, j in enumerate(pixgroups[rank]):
+        fm = fits.getdata(specfiles[j], 'FIBERMAP')
+        ntargets[i] = len(np.unique(fm['TARGETID']))
+
+    if comm is not None:
+        ntargets = comm.gather(ntargets)
+        if rank == 0:
+            ntargets = np.concatenate(ntargets)
+        ntargets = comm.bcast(ntargets, root=0)
+
+    runtimes = 30 + 0.6*ntargets
+
+    #- aim for 25 minutes, but don't exceed maxnodes number of nodes
+    if comm is not None:
+        numnodes = comm.size
+    else:
+        numnodes = min(maxnodes, int(np.ceil(np.sum(runtimes)/(25*60))))
+
+    groups, grouptimes = weighted_partition(runtimes, numnodes)
+    ntargets = np.array([np.sum(ntargets[ii]) for ii in groups])
+    return groups, ntargets, grouptimes
+
+def main():
+    parser = argparse.ArgumentParser(usage = "{prog} [options]")
+    parser.add_argument("--reduxdir", type=str,  help="input redux base directory")
+    parser.add_argument("--outdir", type=str,  help="output directory")
+    parser.add_argument("--ncpu", type=int,  help="number of multiprocessing processes per MPI rank")
+    parser.add_argument("--mpi", action="store_true", help="Use MPI parallelism")
+    parser.add_argument("--dryrun", action="store_true", help="Generate but don't run commands")
+    parser.add_argument("--maxnodes", type=int, default=256, help="maximum number of nodes to use")
+    parser.add_argument("--plan", action="store_true", help="plan how many nodes to use and pixel distribution")
+    args = parser.parse_args()
+
+    if args.mpi:
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+    else:
+        comm = None
+
+    if args.plan:
+        plan(args, comm=comm)
+    else:
+        run_redrock(args, comm=comm)
+
+def plan(args, comm=None):
+    t0 = time.time()
+    if comm is None:
+        rank, size = 0, 1
+    else:
+        rank, size = comm.rank, comm.size
+
+    if rank == 0:
+        specfiles = find_specfiles(args.reduxdir, args.outdir)
+    else:
+        specfiles = None
+
+    if comm is not None:
+        specfiles = comm.bcast(specfiles, root=0)
+
+    if len(specfiles) == 0:
+        if rank == 0:
+            print('All specfiles processed')
+        return list(), list(), list()
+
+    groups, ntargets, grouptimes = group_specfiles(specfiles, args.maxnodes, comm=comm)
+
+    plantime = time.time() - t0
+    if plantime + np.max(grouptimes) <= (25*60):
+        queue = 'debug'
+    else:
+        queue = 'regular'
+
+    numnodes = len(groups)
+
+    if os.getenv('NERSC_HOST') == 'cori':
+        maxproc = 64
+    elif os.getenv('NERSC_HOST') == 'edison':
+        maxproc = 48
+    else:
+        maxproc = 8
+
+    if args.ncpu is None:
+        args.ncpu = maxproc // 2
+
+    #- scale longer if purposefullying using fewer cores (e.g. for memory)
+    if args.ncpu < maxproc // 2:
+        scale = (maxproc//2) / args.ncpu
+        grouptimes *= scale
+
+    jobtime = int(1.15 * (plantime + np.max(grouptimes)))
+    jobhours = jobtime // 3600
+    jobminutes = (jobtime - jobhours*3600) // 60
+    jobseconds = jobtime - jobhours*3600 - jobminutes*60
+
+    if rank == 0:
+        print('#!/bin/bash')
+        print('#SBATCH -N {}'.format(numnodes))
+        print('#SBATCH -p {}'.format(queue))
+        print('#SBATCH -J redrock')
+        if os.getenv('NERSC_HOST') == 'cori':
+            print('#SBATCH -C haswell')
+        print('#SBATCH -t {:02d}:{:02d}:{:02d}'.format(jobhours, jobminutes, jobseconds))
+        print()
+        print('# {} pixels with {} targets'.format(len(specfiles), np.sum(ntargets)))
+        ### print('# plan time {:.1f} minutes'.format(plantime / 60))
+        print('# Using {} nodes in {} queue'.format(numnodes, queue))
+        print('# expected rank runtimes ({:.1f}, {:.1f}, {:.1f}) min/mid/max minutes'.format(
+            np.min(grouptimes)/60, np.median(grouptimes)/60, np.max(grouptimes)/60
+        ))
+        print()
+        print('export DESI_SPECTRO_REDUX={}'.format(os.getenv('DESI_SPECTRO_REDUX')))
+        print('export SPECPROD={}'.format(os.getenv('SPECPROD')))
+        print()
+        print('export OMP_NUM_THREADS=1')
+        print('unset OMP_PLACES')
+        print('unset OMP_PROC_BIND')
+        print('export MPICH_GNI_FORK_MODE=FULLCOPY')
+        print()
+        print('nodes=$SLURM_JOB_NUM_NODES')
+        print('srun -N $nodes -n $nodes -c {} {} --mpi --ncpu {}'.format(
+            maxproc, os.path.abspath(__file__), args.ncpu,
+        ))
+
+    return specfiles, groups, grouptimes
+
+def run_redrock(args, comm=None):
+    if comm is None:
+        rank, size = 0, 1
+    else:
+        rank, size = comm.rank, comm.size
+
+    args.maxnodes = min(args.maxnodes, size)
+
+    t0 = time.time()
+    if rank == 0:
+        print('Starting at {}'.format(time.asctime()))
+
+    specfiles, groups, grouptimes = plan(args, comm=comm)
+
+    if rank == 0:
+        print('Initial setup took {:.1f} sec'.format(time.time() - t0))
+
+    sys.stdout.flush()
+    if comm is not None:
+        groups = comm.bcast(groups, root=0)
+        specfiles = comm.bcast(specfiles, root=0)
+
+    assert len(groups) == size
+    assert len(np.concatenate(groups)) == len(specfiles)
+
+    pixels = np.array([int(os.path.basename( os.path.dirname(x))) \
+                       for x in specfiles])
+    zbfiles = spectra2outfiles(specfiles, 'zbest', outdir=args.outdir)
+    rrfiles = spectra2outfiles(specfiles, 'rr', outdir=args.outdir, ext='.h5')
+
+    for i in groups[rank]:
+        print('---- rank {} pix {} {}'.format(rank, pixels[i], time.asctime()))
+        sys.stdout.flush()
+
+        cmd = 'rrdesi {} -o {} --zbest {}'.format(
+                                specfiles[i], rrfiles[i], zbfiles[i])
+        logfile = rrfiles[i].replace('.h5', '.log')
+        assert logfile != rrfiles[i]
+
+        if args.ncpu is not None:
+            cmd += ' --ncpu {}'.format(args.ncpu)
+
+        print('Rank {} RUNNING {}'.format(rank, cmd))
+
+        if args.dryrun:
+            continue
+    
+        print('LOGGING to {}'.format(logfile))
+        sys.stdout.flush()
+
+        try:
+            maxtries = 2
+            for retry in range(maxtries):
+                t1 = time.time()
+                #- memory leak?  Try making system call instead
+                ### desi.rrdesi(cmd.split()[1:])
+                with open(logfile, 'a') as log:
+                    err = subprocess.call(cmd.split(), stdout=log, stderr=log)
+                dt1 = time.time() - t1
+                if err == 0:
+                    print('FINISHED pix {} rank {} try {} in {:.1f} sec'.format(
+                          pixels[i], rank, retry, dt1))
+                    for outfile in [rrfiles[i], zbfiles[i]]:
+                        if not os.path.exists(outfile):
+                            print('ERROR pix {} missing {}'.format(
+                                  outfile, rrfiles[i]))
+                    break  #- don't need to retry
+                else:
+                    print('FAILED pix {} rank {} try {} in {:.1f} sec error code {}'.format(pixels[i], rank, retry, dt1, err))
+                    if retry == maxtries-1:
+                        print('FATAL pix {} failed {} times; see {}'.format(pixels[i], maxtries, logfile))
+                    else:
+                        time.sleep(np.random.uniform(1,5))
+
+        except Exception as err:
+            print('FAILED: pix {} rank {} raised an exception'.format(
+                  pixels[i], rank))
+            import traceback
+            traceback.print_exc()
+
+    print('---- rank {} is done'.format(rank))
+    sys.stdout.flush()
+
+    if comm is not None:
+        comm.barrier()
+
+    if rank == 0 and not args.dryrun:
+        for outfile in zbfiles:
+            if not os.path.exists(outfile):
+                print('ERROR missing {}'.format(outfile))
+
+        print('all done at {}'.format(time.asctime()))
+
+
+if __name__ == '__main__':
+    main()
