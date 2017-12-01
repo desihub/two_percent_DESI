@@ -9,7 +9,7 @@ of time before the December 2017 SLAC workshop to fully rerun with tagged
 code.  We'll release this as dc17b anyway, and try again for dc17c (or dc18a?).
 
 Final files in:
-/project/projectdirs/desi/datachallenge/dc17bk
+/project/projectdirs/desi/datachallenge/dc17b
 
 Stephen Bailey
 December 2017
