@@ -241,7 +241,7 @@ def run_redrock(args, comm=None):
         assert logfile != rrfiles[i]
 
         if args.ncpu is not None:
-            cmd += ' --ncpu {}'.format(args.ncpu)
+            cmd += ' --mp {}'.format(args.ncpu)
 
         print('Rank {} RUNNING {}'.format(rank, cmd))
         print('LOGGING to {}'.format(logfile))
